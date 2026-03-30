@@ -250,13 +250,26 @@ PyInstallerを使って、Python不要のスタンドアロン実行ファイル
 | Linux | [README_linux.md](./README_linux.md) | `scripts/build_linux.sh` |
 | Windows | [README_windows.md](./README_windows.md) | `scripts/build_windows.ps1` |
 
-### macOS / Linux
+### macOS
+
+Apple Silicon (arm64) / Intel (x86_64) の両アーキテクチャに対応しています。
 
 ```bash
 chmod +x scripts/build_macos.sh
 ./scripts/build_macos.sh
 # 出力: dist/pdal_filter/pdal_filter
 # アーカイブ: dist/pdal_filter_macos.zip
+```
+
+### Linux
+
+最大互換性のために、サポート対象の最も古いディストリビューション上でビルドすることを推奨します。
+
+```bash
+chmod +x scripts/build_linux.sh
+./scripts/build_linux.sh
+# 出力: dist/pdal_filter/pdal_filter
+# アーカイブ: dist/pdal_filter_linux.tar.gz
 ```
 
 ### Windows（PowerShell）
