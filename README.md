@@ -1,4 +1,4 @@
-# gq-filter
+# gq-filter（ジークフィルター）
 
 PDAL（Point Data Abstraction Library）を使った点群データフィルタリングCLIツールです。
 LAS / LAZファイルに対して、入射角・強度・距離・重複点などのフィルタを柔軟に組み合わせて適用できます。
