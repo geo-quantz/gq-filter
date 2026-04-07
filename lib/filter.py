@@ -263,9 +263,7 @@ def build_pipeline(
         stages.append({"type": FilterType.MERGE})
 
     # Ordered list of filters
-    # 1. Range (based on scanner origin) - Only applied to first file if not merging individual steps
-    # Note: For multiple files, if they have different origins, they should be filtered individually first.
-    # But for a single-pass merge pipeline, we apply what we can.
+    # 1. Range (based on scanner origin)
     f_range = build_range_filter(filter_params.range_dist, input_paths[0])
     if f_range: stages.append(f_range)
 
