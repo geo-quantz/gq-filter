@@ -1,0 +1,26 @@
+# Linux build image for gq-filter (used to produce dist/pdal_filter_linux.tar.gz)
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PATH=/opt/conda/bin:$PATH
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    wget ca-certificates bzip2 binutils \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN ARCH=$(uname -m) \
+    && wget -q "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-${ARCH}.sh" -O /tmp/miniforge.sh \
+    && bash /tmp/miniforge.sh -b -p /opt/conda \
+    && rm /tmp/miniforge.sh
+
+RUN conda install -y -c conda-forge python=3.12 pdal python-pdal pyinstaller \
+    && conda clean -afy
+
+WORKDIR /app
+COPY . /app
+
+RUN pyinstaller --clean packaging/pdal_filter_linux.spec \
+    && ./dist/pdal_filter/pdal_filter --help > /dev/null \
+    && tar -czf dist/pdal_filter_linux.tar.gz -C dist pdal_filter
+
+CMD ["bash"]

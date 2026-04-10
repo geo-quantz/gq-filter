@@ -1,0 +1,61 @@
+name: Build Windows
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Miniforge (conda-forge)
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          miniforge-version: latest
+          python-version: '3.12'
+          auto-activate-base: false
+          activate-environment: build
+          channels: conda-forge
+
+      - name: Install PDAL and PyInstaller
+        shell: bash -l {0}
+        run: |
+          conda install -y -c conda-forge python=3.12 pdal python-pdal pyinstaller
+
+      - name: Build with PyInstaller
+        shell: bash -l {0}
+        run: |
+          pyinstaller --clean packaging/pdal_filter.spec
+
+      - name: Sanity check
+        shell: bash -l {0}
+        run: |
+          ./dist/pdal_filter/pdal_filter.exe --help
+
+      - name: Package zip
+        shell: pwsh
+        run: |
+          Compress-Archive -Path dist/pdal_filter/* -DestinationPath dist/pdal_filter_windows.zip
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pdal_filter_windows
+          path: dist/pdal_filter_windows.zip
+
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/pdal_filter_windows.zip
