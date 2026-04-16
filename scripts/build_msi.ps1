@@ -52,9 +52,10 @@ Write-Host "Harvesting $distDir -> $harvestWxs"
     -out $harvestWxs
 if ($LASTEXITCODE -ne 0) { Write-Error "heat.exe failed with exit $LASTEXITCODE" }
 
-# 4. Compile both wxs files
+# 4. Compile both wxs files (x64 target to match 64-bit Program Files)
 Write-Host "Compiling WiX sources..."
 & $candle -nologo `
+    -arch x64 `
     -dSourceDir="$distDir" `
     -out "packaging/" `
     "packaging/gqfilter.wxs" $harvestWxs
