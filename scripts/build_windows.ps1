@@ -1,9 +1,9 @@
 # build_windows.ps1
-# PowerShell script to build the pdal_filter executable on Windows.
+# PowerShell script to build the gqfilter executable on Windows.
 
 $ErrorActionPreference = "Stop"
 
-Write-Host "--- Starting Windows Build for pdal_filter ---" -ForegroundColor Cyan
+Write-Host "--- Starting Windows Build for gqfilter ---" -ForegroundColor Cyan
 
 # 1. Check prerequisites
 Write-Host "Checking prerequisites..."
@@ -34,7 +34,7 @@ if (Test-Path "pyproject.toml") {
 
 # 4. Run PyInstaller
 Write-Host "Running PyInstaller..."
-$specFile = "packaging/pdal_filter.spec"
+$specFile = "packaging/gqfilter.spec"
 if (!(Test-Path $specFile)) {
     Write-Error "Spec file not found at $specFile"
 }
@@ -43,8 +43,8 @@ pyinstaller --clean $specFile
 
 # 5. Sanity Check
 Write-Host "Verifying build..."
-$exeDir = "dist/pdal_filter"
-$exePath = Join-Path $exeDir "pdal_filter.exe"
+$exeDir = "dist/gqfilter"
+$exePath = Join-Path $exeDir "gqfilter.exe"
 if (Test-Path $exePath) {
     Write-Host "Build successful! Executable found at $exePath" -ForegroundColor Green
     

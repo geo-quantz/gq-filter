@@ -39,24 +39,24 @@ The script will:
 
 1. Create a temporary virtual environment.
 2. Install necessary Python dependencies (`pyinstaller`, `pdal`).
-3. Build a standalone executable using `packaging/pdal_filter_linux.spec`.
+3. Build a standalone executable using `packaging/gqfilter_linux.spec`.
 4. Perform a sanity check.
-5. Create a `dist/pdal_filter_linux.tar.gz` archive.
+5. Create a `dist/gqfilter_linux.tar.gz` archive.
 
-The resulting binary will be located at `dist/pdal_filter/pdal_filter`.
+The resulting binary will be located at `dist/gqfilter/gqfilter`.
 
 ## Usage
 
 You can run the executable directly:
 
 ```bash
-./dist/pdal_filter/pdal_filter --input input.las --output output.las --deduplicate
+./dist/gqfilter/gqfilter --input input.las --output output.las --deduplicate
 ```
 
 For more options, run:
 
 ```bash
-./dist/pdal_filter/pdal_filter --help
+./dist/gqfilter/gqfilter --help
 ```
 
 ## Troubleshooting
@@ -65,7 +65,7 @@ For more options, run:
 
 If you encounter errors about missing `.so` files (e.g., `libpdalcpp.so`), ensure that PDAL is correctly installed. The
 build spec attempts to bundle PDAL libraries from Conda or common system paths. If you are using a non-standard path,
-you may need to update `packaging/pdal_filter_linux.spec`.
+you may need to update `packaging/gqfilter_linux.spec`.
 
 ### GLIBC Version Errors
 

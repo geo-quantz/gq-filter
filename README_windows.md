@@ -1,6 +1,6 @@
 # Windows Distribution Guide - PDAL Filter CLI
 
-This document describes how to build and run the `pdal_filter` tool as a standalone Windows executable.
+This document describes how to build and run the `gqfilter` tool as a standalone Windows executable.
 
 ## Prerequisites
 
@@ -28,8 +28,8 @@ The script will:
 
 - Create a temporary virtual environment (`.venv-build`).
 - Install `pyinstaller`, `pdal`, and the current package.
-- Generate a standalone executable using the configuration in `packaging/pdal_filter.spec`.
-- Perform a sanity check by running `pdal_filter.exe --help`.
+- Generate a standalone executable using the configuration in `packaging/gqfilter.spec`.
+- Perform a sanity check by running `gqfilter.exe --help`.
 
 ## Optional: Create MSI Installer
 
@@ -40,21 +40,21 @@ system PATH:
    ```powershell
    .\scripts\build_msi.ps1
    ```
-2. The installer will be created at `dist\pdal_filter.msi`.
+2. The installer will be created at `dist\gqfilter.msi`.
 
 ## Output Artifacts
 
 After a successful build, the directory containing the executable and its dependencies will be located at:
-`dist\pdal_filter\`
+`dist\gqfilter\`
 
-The executable is `dist\pdal_filter\pdal_filter.exe`.
+The executable is `dist\gqfilter\gqfilter.exe`.
 
 ## Usage
 
 You can run the executable from any terminal:
 
 ```cmd
-dist\pdal_filter\pdal_filter.exe --input input.las --output output.las --intensity-min 100 --deduplicate
+dist\gqfilter\gqfilter.exe --input input.las --output output.las --intensity-min 100 --deduplicate
 ```
 
 ## Troubleshooting PDAL DLLs
@@ -79,4 +79,4 @@ If the tool runs but reports that a specific filter or writer is missing (e.g., 
 
 - This usually means the required PDAL plugin (DLL) was not bundled or is not found in the search path.
 - Check if the DLL exists in your environment and ensure it's being picked up by the `binaries` list in
-  `packaging/pdal_filter.spec`.
+  `packaging/gqfilter.spec`.

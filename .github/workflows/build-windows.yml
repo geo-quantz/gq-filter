@@ -36,26 +36,51 @@ jobs:
       - name: Build with PyInstaller
         shell: bash -l {0}
         run: |
-          pyinstaller --clean packaging/pdal_filter.spec
+          pyinstaller --clean packaging/gqfilter.spec
 
       - name: Sanity check
         shell: bash -l {0}
         run: |
-          ./dist/pdal_filter/pdal_filter.exe --help
+          ./dist/gqfilter/gqfilter.exe --help
 
       - name: Package zip
         shell: pwsh
         run: |
-          Compress-Archive -Path dist/pdal_filter/* -DestinationPath dist/pdal_filter_windows.zip
+          Compress-Archive -Path dist/gqfilter/* -DestinationPath dist/gqfilter_windows.zip
 
-      - name: Upload artifact
+      - name: Install WiX Toolset v3
+        shell: pwsh
+        run: |
+          if (-not (Get-Command candle.exe -ErrorAction SilentlyContinue)) {
+            choco install wixtoolset --no-progress -y
+          }
+          $wixInstall = Get-ChildItem "C:\Program Files (x86)\WiX Toolset v*" -ErrorAction SilentlyContinue |
+                        Select-Object -First 1
+          if ($wixInstall) {
+            "$($wixInstall.FullName)\bin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          }
+
+      - name: Build MSI installer
+        shell: pwsh
+        run: |
+          .\scripts\build_msi.ps1
+
+      - name: Upload zip artifact
         uses: actions/upload-artifact@v4
         with:
-          name: pdal_filter_windows
-          path: dist/pdal_filter_windows.zip
+          name: gqfilter_windows
+          path: dist/gqfilter_windows.zip
+
+      - name: Upload MSI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gqfilter_windows_msi
+          path: dist/gqfilter.msi
 
       - name: Attach to release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/pdal_filter_windows.zip
+          files: |
+            dist/gqfilter_windows.zip
+            dist/gqfilter.msi

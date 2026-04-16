@@ -38,11 +38,11 @@ The script will:
 
 1. Create a temporary virtual environment.
 2. Install necessary Python dependencies (`pyinstaller`, `pdal`).
-3. Build a standalone executable using `packaging/pdal_filter_macos.spec`.
+3. Build a standalone executable using `packaging/gqfilter_macos.spec`.
 4. Perform a sanity check.
-5. Create a `dist/pdal_filter_macos.zip` archive.
+5. Create a `dist/gqfilter_macos.zip` archive.
 
-The resulting binary will be located at `dist/pdal_filter/pdal_filter`.
+The resulting binary will be located at `dist/gqfilter/gqfilter`.
 
 ## Architecture Support
 
@@ -60,7 +60,7 @@ Because the resulting binary is unsigned, macOS Gatekeeper may block it from run
 
 ### Running for the first time
 
-1. Locate `pdal_filter` in Finder.
+1. Locate `gqfilter` in Finder.
 2. Right-click (or Control-click) the application and choose **Open**.
 3. In the dialog that appears, click **Open**.
 
@@ -68,10 +68,10 @@ Alternatively, you can remove the quarantine attribute via terminal (this is onl
 
 ```bash
 # Check if the attribute exists first
-xattr dist/pdal_filter/pdal_filter
+xattr dist/gqfilter/gqfilter
 
 # Remove it if com.apple.quarantine is listed
-xattr -d com.apple.quarantine dist/pdal_filter/pdal_filter
+xattr -d com.apple.quarantine dist/gqfilter/gqfilter
 ```
 
 *Note: If you built the binary locally using the build script, it will not have the quarantine attribute.*
@@ -79,11 +79,11 @@ xattr -d com.apple.quarantine dist/pdal_filter/pdal_filter
 ## Usage
 
 ```bash
-./dist/pdal_filter/pdal_filter --input input.las --output output.las --deduplicate
+./dist/gqfilter/gqfilter --input input.las --output output.las --deduplicate
 ```
 
 For more options, run:
 
 ```bash
-./dist/pdal_filter/pdal_filter --help
+./dist/gqfilter/gqfilter --help
 ```

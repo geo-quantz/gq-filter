@@ -1,0 +1,58 @@
+name: Build Linux
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-22.04  # older glibc for broader compatibility
+    defaults:
+      run:
+        shell: bash -l {0}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Miniforge (conda-forge)
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          miniforge-version: latest
+          python-version: '3.12'
+          auto-activate-base: false
+          activate-environment: build
+          channels: conda-forge
+
+      - name: Install PDAL and PyInstaller
+        run: |
+          conda install -y -c conda-forge python=3.12 pdal python-pdal pyinstaller
+
+      - name: Build with PyInstaller
+        run: |
+          pyinstaller --clean --noconfirm packaging/gqfilter_linux.spec
+
+      - name: Sanity check
+        run: |
+          ./dist/gqfilter/gqfilter --help
+
+      - name: Package tar.gz
+        shell: bash
+        run: |
+          tar -czf dist/gqfilter_linux.tar.gz -C dist gqfilter
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gqfilter_linux
+          path: dist/gqfilter_linux.tar.gz
+
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/gqfilter_linux.tar.gz

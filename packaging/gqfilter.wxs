@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+    <Product Id="*" Name="gqfilter" Language="1033" Version="0.1.0.0"
+             Manufacturer="GeoQuantz" UpgradeCode="d1b1c2a3-e4f5-4a5b-9c6d-7e8f9a0b1c2d">
+        <Package InstallerVersion="200" Compressed="yes" InstallScope="perMachine" />
+
+        <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+        <MediaTemplate EmbedCab="yes" />
+
+        <Feature Id="ProductFeature" Title="gqfilter" Level="1">
+            <ComponentGroupRef Id="HarvestedComponents" />
+            <ComponentRef Id="PathEnvironment" />
+        </Feature>
+    </Product>
+
+    <Fragment>
+        <Directory Id="TARGETDIR" Name="SourceDir">
+            <Directory Id="ProgramFiles64Folder">
+                <Directory Id="INSTALLFOLDER" Name="gqfilter" />
+            </Directory>
+        </Directory>
+    </Fragment>
+
+    <Fragment>
+        <DirectoryRef Id="INSTALLFOLDER">
+            <Component Id="PathEnvironment" Guid="a1b2c3d4-e5f6-4b5c-8d7e-9f0a1b2c3d4e">
+                <RegistryValue Root="HKLM" Key="Software\GeoQuantz\gqfilter"
+                               Name="installed" Type="integer" Value="1" KeyPath="yes" />
+                <Environment Id="PATH" Name="PATH" Value="[INSTALLFOLDER]"
+                             Permanent="no" Part="last" Action="set" System="yes" />
+            </Component>
+        </DirectoryRef>
+    </Fragment>
+</Wix>

@@ -2,8 +2,6 @@ import json
 from dataclasses import dataclass
 from typing import Optional, Dict, Any
 
-import pdal
-
 
 # -------------------------------
 # Parameter definitions
@@ -191,6 +189,8 @@ def execute_pipeline(pipeline_dict: Dict[str, Any]) -> Dict[str, Any]:
     'filters.unique' or 'filters.duplicate'), we retry once with those
     stages removed to keep execution deterministic in plugin-light envs.
     """
+
+    import pdal  # deferred: loading PDAL dylibs is expensive; keep out of --help path
 
     def _run(pdict: Dict[str, Any]) -> Dict[str, Any]:
         pl = pdal.Pipeline(json.dumps(pdict))

@@ -1,0 +1,67 @@
+name: Build macOS
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    defaults:
+      run:
+        shell: bash -l {0}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Miniforge (conda-forge)
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          miniforge-version: latest
+          python-version: '3.12'
+          auto-activate-base: false
+          activate-environment: build
+          channels: conda-forge
+
+      - name: Install PDAL and PyInstaller
+        run: |
+          conda install -y -c conda-forge python=3.12 pdal python-pdal pyinstaller
+
+      - name: Build with PyInstaller
+        run: |
+          pyinstaller --clean --noconfirm packaging/gqfilter_macos.spec
+
+      - name: Sanity check
+        run: |
+          ./dist/gqfilter/gqfilter --help
+
+      - name: Ad-hoc code signing
+        shell: bash
+        run: |
+          xattr -cr dist/gqfilter
+          codesign --force --deep --sign - dist/gqfilter
+          codesign --verify --deep --strict dist/gqfilter
+
+      - name: Package zip
+        shell: bash
+        run: |
+          cd dist
+          rm -f gqfilter_macos.zip
+          zip -r gqfilter_macos.zip gqfilter
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gqfilter_macos
+          path: dist/gqfilter_macos.zip
+
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/gqfilter_macos.zip
