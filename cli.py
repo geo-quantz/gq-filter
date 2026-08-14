@@ -10,6 +10,7 @@ from lib.filter import (
     IncidenceAngleParams,
     IntensityParams,
     RangeParams,
+    SpatialClipParams,
     build_pipeline,
     execute_pipeline,
 )
@@ -69,6 +70,14 @@ def parse_args(args: List[str]) -> argparse.Namespace:
     )
 
     add_ground_args(parser)
+    # Spatial Clip Group
+    clip_group = parser.add_argument_group("Spatial Clip (Bounding Box)")
+    clip_group.add_argument("--clip-xmin", type=float, metavar="X", help="Minimum X coordinate.")
+    clip_group.add_argument("--clip-xmax", type=float, metavar="X", help="Maximum X coordinate.")
+    clip_group.add_argument("--clip-ymin", type=float, metavar="Y", help="Minimum Y coordinate.")
+    clip_group.add_argument("--clip-ymax", type=float, metavar="Y", help="Maximum Y coordinate.")
+    clip_group.add_argument("--clip-zmin", type=float, metavar="Z", help="Minimum Z coordinate.")
+    clip_group.add_argument("--clip-zmax", type=float, metavar="Z", help="Maximum Z coordinate.")
 
     return parser.parse_args(args)
 
@@ -102,12 +111,23 @@ def assemble_config(args: argparse.Namespace) -> FilterOptions:
     if args.deduplicate:
         duplicate = DuplicateParams(enabled=True)
 
+    # Spatial clip
+    spatial_clip = None
+    clip_vals = [args.clip_xmin, args.clip_xmax, args.clip_ymin, args.clip_ymax, args.clip_zmin, args.clip_zmax]
+    if any(v is not None for v in clip_vals):
+        spatial_clip = SpatialClipParams(
+            x_min=args.clip_xmin, x_max=args.clip_xmax,
+            y_min=args.clip_ymin, y_max=args.clip_ymax,
+            z_min=args.clip_zmin, z_max=args.clip_zmax,
+        )
+
     return FilterOptions(
         incidence=incidence,
         intensity=intensity,
         range_dist=range_dist,
         duplicate=duplicate,
         ground=ground_params_from_args(args),
+        spatial_clip=spatial_clip,
     )
 
 
