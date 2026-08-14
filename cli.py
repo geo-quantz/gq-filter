@@ -10,6 +10,7 @@ from lib.filter import (
     IncidenceAngleParams,
     IntensityParams,
     RangeParams,
+    StatisticalOutlierParams,
     build_pipeline,
     execute_pipeline,
 )
@@ -69,6 +70,27 @@ def parse_args(args: List[str]) -> argparse.Namespace:
     )
 
     add_ground_args(parser)
+    # Statistical Outlier Removal Group
+    sor_group = parser.add_argument_group("Statistical Outlier Removal")
+    sor_group.add_argument(
+        "--outlier-statistical",
+        action="store_true",
+        help="Enable statistical outlier removal (filters.outlier method=statistical).",
+    )
+    sor_group.add_argument(
+        "--outlier-mean-k",
+        type=int,
+        default=8,
+        metavar="K",
+        help="Number of nearest neighbors for outlier detection (default: 8).",
+    )
+    sor_group.add_argument(
+        "--outlier-multiplier",
+        type=float,
+        default=2.0,
+        metavar="M",
+        help="Standard deviation multiplier threshold (default: 2.0).",
+    )
 
     return parser.parse_args(args)
 
@@ -102,12 +124,21 @@ def assemble_config(args: argparse.Namespace) -> FilterOptions:
     if args.deduplicate:
         duplicate = DuplicateParams(enabled=True)
 
+    # Statistical outlier removal
+    statistical_outlier = None
+    if args.outlier_statistical:
+        statistical_outlier = StatisticalOutlierParams(
+            mean_k=args.outlier_mean_k,
+            multiplier=args.outlier_multiplier,
+        )
+
     return FilterOptions(
         incidence=incidence,
         intensity=intensity,
         range_dist=range_dist,
         duplicate=duplicate,
         ground=ground_params_from_args(args),
+        statistical_outlier=statistical_outlier,
     )
 
 
