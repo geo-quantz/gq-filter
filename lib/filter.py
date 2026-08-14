@@ -103,6 +103,17 @@ class DuplicateParams:
 
 
 @dataclass
+class RadiusOutlierParams:
+    """Parameters for radius-based outlier removal.
+    Uses PDAL's filters.outlier (method=radius): points with fewer than
+    min_k neighbors within the given radius are classified as noise and removed.
+    """
+    radius: float = 1.0
+    min_k: int = 2
+    enabled: bool = True
+
+
+@dataclass
 class FilterOptions:
     """Container for all filter parameters, used by the pipeline builder."""
     incidence: Optional[IncidenceAngleParams] = None
@@ -112,6 +123,7 @@ class FilterOptions:
     color_clean: Optional[ColorCleanParams] = None
     duplicate: Optional[DuplicateParams] = None
     ground: Optional[GroundClassifyParams] = None
+    radius_outlier: Optional[RadiusOutlierParams] = None
     preset_name: Optional[str] = None
 
 
@@ -339,6 +351,24 @@ def build_color_cleaning_stages(params: Optional[ColorCleanParams]) -> List[Dict
     return stages
 
 
+def build_radius_outlier_filter(
+        params: Optional[RadiusOutlierParams],
+) -> Optional[Dict[str, Any]]:
+    """Build a radius-based outlier removal stage using filters.outlier.
+
+    Points with fewer than min_k neighbors within the given radius are removed.
+    Useful for removing isolated stray points that are spatially isolated.
+    """
+    if not params or not params.enabled:
+        return None
+    return {
+        "type": "filters.outlier",
+        "method": "radius",
+        "radius": params.radius,
+        "min_k": params.min_k,
+    }
+
+
 def build_duplicate_filter(
         params: Optional[DuplicateParams],
 ) -> Optional[list]:
@@ -403,7 +433,11 @@ def build_pipeline(
     # Ground classification (Issue #3): after noise/color cleaning, before thinning
     stages.extend(build_ground_classify_stages(filter_params.ground))
 
-    # 5. Voxel Downsampling
+    # 5. Radius Outlier Removal
+    f_rad = build_radius_outlier_filter(filter_params.radius_outlier)
+    if f_rad: stages.append(f_rad)
+
+    # 6. Voxel Downsampling
     f_vox = build_voxel_filter(filter_params.voxel)
     if f_vox: stages.append(f_vox)
 
