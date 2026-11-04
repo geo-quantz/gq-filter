@@ -37,6 +37,17 @@ def test_rejects_non_positive_values(field):
         GroundClassifyParams(method="smrf", **{field: 0})
 
 
+@pytest.mark.parametrize("value", [float("nan"), float("inf")])
+def test_rejects_non_finite_values(value):
+    with pytest.raises(ValueError, match="cell"):
+        GroundClassifyParams(method="smrf", cell=value)
+
+
+def test_rejects_window_smaller_than_cell():
+    with pytest.raises(ValueError, match="window"):
+        GroundClassifyParams(method="pmf", cell=5.0, window=2.0)
+
+
 def test_csf_rejects_window():
     with pytest.raises(ValueError, match="window"):
         GroundClassifyParams(method="csf", window=10.0)

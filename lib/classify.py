@@ -16,6 +16,7 @@ data, feet for the autzen-small fixture). ``None`` means "use PDAL default".
 from __future__ import annotations
 
 import argparse
+import math
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
@@ -67,10 +68,14 @@ class GroundClassifyParams:
             value = getattr(self, name)
             if value is None:
                 continue
-            if value <= 0:
-                raise ValueError(f"Ground classification {name} must be > 0 (got {value})")
+            if not math.isfinite(value) or value <= 0:
+                raise ValueError(f"Ground classification {name} must be a positive number (got {value})")
             if name not in supported:
                 raise ValueError(f"Ground classification method {self.method!r} does not use {name}")
+        if self.cell is not None and self.window is not None and self.window < self.cell:
+            raise ValueError(
+                f"Ground classification window ({self.window}) must be >= cell ({self.cell})"
+            )
 
 
 def build_ground_classify_stages(
@@ -114,7 +119,10 @@ def add_ground_args(parser: argparse.ArgumentParser) -> None:
     group.add_argument(
         "--ground-only",
         action="store_true",
-        help="Keep only ground points (Class 2) after classification.",
+        help=(
+            "Keep only ground points (Class 2) after classification. PDAL only "
+            "classifies last/only returns, so other returns are dropped too."
+        ),
     )
     group.add_argument(
         "--ground-cell", type=float, metavar="C",

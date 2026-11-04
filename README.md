@@ -146,7 +146,7 @@ PDAL 標準の地表分類フィルターを CLI から使えます。フィル�
 | オプション | 説明 |
 | :--- | :--- |
 | `--ground-classify {smrf,pmf,csf}` | 地表分類を有効化 |
-| `--ground-only` | 分類後に地表（Class 2）のみ残す |
+| `--ground-only` | 分類後に地表（Class 2）のみ残す。PDAL は最終・単一リターンしか分類しないため、それ以外のリターンもあわせて除かれる |
 | `--ground-cell C` | グリッドサイズ（smrf `cell` / pmf `cell_size` / csf `resolution`） |
 | `--ground-window W` | 最大窓サイズ（smrf `window` / pmf `max_window_size`、csf では使用不可）。最大の建物より大きくする |
 | `--ground-threshold T` | 地表とみなす高さの閾値（smrf `threshold` / pmf `max_distance` / csf `threshold`） |
