@@ -3,6 +3,7 @@ import json
 import sys
 from typing import List
 
+from lib.classify import add_ground_args, ground_params_from_args
 from lib.filter import (
     DuplicateParams,
     FilterOptions,
@@ -67,6 +68,8 @@ def parse_args(args: List[str]) -> argparse.Namespace:
         help="Enable duplicate point removal (removes exact XYZ matches).",
     )
 
+    add_ground_args(parser)
+
     return parser.parse_args(args)
 
 
@@ -104,6 +107,7 @@ def assemble_config(args: argparse.Namespace) -> FilterOptions:
         intensity=intensity,
         range_dist=range_dist,
         duplicate=duplicate,
+        ground=ground_params_from_args(args),
     )
 
 

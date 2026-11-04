@@ -41,4 +41,35 @@ SCENARIOS: list[dict] = [
             "duplicate": True,
         },
     },
+    # --- Ground classification (Issue #3) ---
+    # autzen-small is in feet and ~95% of it is one building roof (Class 6).
+    # Only 385 pts are labelled ground (Class 2) in the source data.
+    {
+        "name": "ground_csf_classify",
+        "description": "CSF ground classification only (no points dropped; Classification rewritten)",
+        "filter_params": {
+            "ground": {"method": "csf", "cell": 3.0, "threshold": 1.5},
+        },
+    },
+    {
+        "name": "ground_csf_only",
+        "description": "CSF tuned for feet (resolution 3ft, threshold 1.5ft), keep ground only",
+        "filter_params": {
+            "ground": {"method": "csf", "cell": 3.0, "threshold": 1.5, "ground_only": True},
+        },
+    },
+    {
+        "name": "ground_smrf_only",
+        "description": "SMRF with PDAL defaults, keep ground only (known to misclassify the roof)",
+        "filter_params": {
+            "ground": {"method": "smrf", "ground_only": True},
+        },
+    },
+    {
+        "name": "ground_pmf_only",
+        "description": "PMF with max_window_size 200ft, keep ground only",
+        "filter_params": {
+            "ground": {"method": "pmf", "window": 200.0, "ground_only": True},
+        },
+    },
 ]

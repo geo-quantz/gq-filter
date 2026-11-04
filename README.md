@@ -133,6 +133,58 @@ python cli.py -i input.las -o output.las --sample-radius 0.5
 python tools/evaluate_new_filters.py
 ```
 
+## 地表分類（Issue #3）
+
+PDAL 標準の地表分類フィルターを CLI から使えます。フィルター（点の削除）とは別機能で、既定では点を消さずに `Classification` を地表 `2` / 非地表 `1` に書き換えます（PDAL の既定で対象は最終・単一リターン。それ以外の点は `0` のまま）。
+
+| 方式 | PDAL | 特徴 |
+| :--- | :--- | :--- |
+| `smrf` | `filters.smrf` | Simple Morphological Filter（Pingel et al., 2013）。航空 LiDAR 向けの標準。窓サイズより大きい建物は地表扱いになりやすい |
+| `pmf` | `filters.pmf` | Progressive Morphological Filter（Zhang et al., 2003）。窓を段階的に広げる。大きい窓ほど建物を除けるが遅い |
+| `csf` | `filters.csf` | Cloth Simulation Filter（Zhang et al., 2016）。点群を反転して布をかぶせる方式。狭い範囲・建物が大半を占めるデータでも安定 |
+
+| オプション | 説明 |
+| :--- | :--- |
+| `--ground-classify {smrf,pmf,csf}` | 地表分類を有効化 |
+| `--ground-only` | 分類後に地表（Class 2）のみ残す |
+| `--ground-cell C` | グリッドサイズ（smrf `cell` / pmf `cell_size` / csf `resolution`） |
+| `--ground-window W` | 最大窓サイズ（smrf `window` / pmf `max_window_size`、csf では使用不可）。最大の建物より大きくする |
+| `--ground-threshold T` | 地表とみなす高さの閾値（smrf `threshold` / pmf `max_distance` / csf `threshold`） |
+| `--ground-keep-classes` | 分類前に既存の `Classification` を 0 にリセットしない |
+
+長さはすべて入力データの座標単位（通常はメートル、autzen-small はフィート）です。未指定の値は PDAL の既定値を使います。地表分類はノイズ・色クリーニングの後、ボクセル間引きの前に実行されます。
+
+```bash
+# CSF で地表のみ抽出（1m グリッド、閾値 0.5m）
+python main.py -i input.las -o ground.las --ground-classify csf --ground-cell 1.0 --ground-threshold 0.5 --ground-only
+
+# SMRF で分類のみ（点は残し、Classification を書き換え）
+python main.py -i input.las -o classified.las --ground-classify smrf --ground-window 30
+```
+
+### 評価結果（autzen-small）
+
+元データのラベル（Class 2 = 385 点）を正解として、地表判定の適合率・再現率を計測しました。このフィクスチャは約 36m 四方で、点の約 95% が 1 棟の屋根（Class 6）です。
+
+| 方式 | 設定 | 地表判定点数 | 適合率 | 再現率 | F1 |
+| :--- | :--- | ---: | ---: | ---: | ---: |
+| smrf | PDAL 既定 | 7,062 | 0.052 | 0.948 | 0.098 |
+| smrf | window=200ft | 7,036 | 0.052 | 0.953 | 0.099 |
+| pmf | PDAL 既定 | 5,798 | 0.057 | 0.855 | 0.106 |
+| pmf | window=200ft | 1,383 | 0.238 | 0.855 | 0.372 |
+| csf | PDAL 既定 | 2,374 | 0.136 | 0.839 | 0.234 |
+| csf | resolution=3ft, threshold=1.5ft | 419 | 0.919 | 1.000 | **0.958** |
+
+- 範囲の大半を屋根が覆うため、smrf / pmf（形態学フィルター）は屋根の下の地表面を推定できず、屋根を地表と判定します。窓を範囲より大きくしても改善は限定的です。広い範囲で地表が十分に写っているデータでは結果が変わるため、この表は「狭い範囲・建物主体」の条件での比較です。
+- csf は解像度をデータ単位に合わせる（既定 1.0 はメートル想定）だけで F1 0.96 になりました。
+- まず `csf` を試し、地形の起伏が大きい航空データでは `smrf` を比較する運用を推奨します。
+
+再現手順:
+```bash
+make harness                                   # ground_* シナリオを含む回帰ハーネス
+uv run python tools/evaluate_ground_classify.py   # 上表の適合率・再現率
+```
+
 ## 開発とテスト
 ```powershell
 pytest tests/test_filter.py

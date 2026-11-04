@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import List, Dict, Any, Tuple
 import concurrent.futures
 
+from lib.classify import add_ground_args, ground_params_from_args
 from lib.filter import (
     DuplicateParams,
     FilterOptions,
@@ -236,6 +237,8 @@ def parse_args(args: List[str]) -> argparse.Namespace:
         help="並列処理の最大数。指定しない場合は (CPUコア数 - 1) が自動設定されます。",
     )
 
+    add_ground_args(parser)
+
     return parser.parse_args(args)
 
 
@@ -309,6 +312,7 @@ def assemble_config(args: argparse.Namespace) -> FilterOptions:
         voxel=voxel,
         color_clean=color_clean,
         duplicate=duplicate,
+        ground=ground_params_from_args(args),
         preset_name=args.preset
     )
 
