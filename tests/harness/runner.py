@@ -51,42 +51,10 @@ def _run_gqfilter(input_path: Path, output_path: Path, filter_params: dict) -> d
     Returns {"success": bool, "error": str}.
     """
     # Import only the pure-Python parts of lib/filter (no pdal import triggered).
-    from lib.filter import (
-        FilterOptions,
-        IncidenceAngleParams,
-        IntensityParams,
-        RangeParams,
-        DuplicateParams,
-        build_pipeline,
-    )
+    from lib.filter import build_pipeline
+    from tests.harness.options import options_from_params
 
-    fp = filter_params
-    options = FilterOptions(
-        incidence=(
-            IncidenceAngleParams(max_angle=fp["incidence_angle_max"])
-            if fp.get("incidence_angle_max") is not None
-            else None
-        ),
-        intensity=(
-            IntensityParams(
-                min_intensity=fp.get("intensity_min"),
-                max_intensity=fp.get("intensity_max"),
-            )
-            if (fp.get("intensity_min") is not None or fp.get("intensity_max") is not None)
-            else None
-        ),
-        range_dist=(
-            RangeParams(
-                min_distance=fp.get("range_min"),
-                max_distance=fp.get("range_max"),
-            )
-            if (fp.get("range_min") is not None or fp.get("range_max") is not None)
-            else None
-        ),
-        duplicate=(
-            DuplicateParams(enabled=True) if fp.get("duplicate") else None
-        ),
-    )
+    options = options_from_params(filter_params)
 
     pipeline_dict = build_pipeline(str(input_path), str(output_path), options)
 

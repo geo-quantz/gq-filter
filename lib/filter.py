@@ -7,6 +7,8 @@ from datetime import datetime
 from dataclasses import dataclass
 from typing import Optional, Dict, Any, List, Tuple, Union
 
+from lib.classify import GroundClassifyParams, build_ground_classify_stages
+
 # pye57 and numpy are optional — only required for E57 support.
 # Import them lazily inside the functions that need them so that
 # environments without these packages (e.g. the test harness) can still
@@ -109,6 +111,7 @@ class FilterOptions:
     voxel: Optional[VoxelParams] = None
     color_clean: Optional[ColorCleanParams] = None
     duplicate: Optional[DuplicateParams] = None
+    ground: Optional[GroundClassifyParams] = None
     preset_name: Optional[str] = None
 
 
@@ -396,6 +399,9 @@ def build_pipeline(
 
     # 4. Color Cleaning
     stages.extend(build_color_cleaning_stages(filter_params.color_clean))
+
+    # Ground classification (Issue #3): after noise/color cleaning, before thinning
+    stages.extend(build_ground_classify_stages(filter_params.ground))
 
     # 5. Voxel Downsampling
     f_vox = build_voxel_filter(filter_params.voxel)
