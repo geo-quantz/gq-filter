@@ -34,5 +34,41 @@
     "peak_memory_mb": 0.0,
     "env_tag": "darwin-arm64-local",
     "accuracy_note": ""
+  },
+  "ground_csf_classify": {
+    "point_count_in": 7388,
+    "point_count_out": 7388,
+    "removal_rate": 0.0,
+    "elapsed_sec": 0.1787,
+    "peak_memory_mb": 0.0,
+    "env_tag": "darwin-arm64-local",
+    "accuracy_note": ""
+  },
+  "ground_csf_only": {
+    "point_count_in": 7388,
+    "point_count_out": 419,
+    "removal_rate": 0.943286,
+    "elapsed_sec": 0.1795,
+    "peak_memory_mb": 0.0,
+    "env_tag": "darwin-arm64-local",
+    "accuracy_note": ""
+  },
+  "ground_smrf_only": {
+    "point_count_in": 7388,
+    "point_count_out": 7062,
+    "removal_rate": 0.044126,
+    "elapsed_sec": 0.2032,
+    "peak_memory_mb": 0.28,
+    "env_tag": "darwin-arm64-local",
+    "accuracy_note": ""
+  },
+  "ground_pmf_only": {
+    "point_count_in": 7388,
+    "point_count_out": 1383,
+    "removal_rate": 0.812805,
+    "elapsed_sec": 0.2072,
+    "peak_memory_mb": 0.0,
+    "env_tag": "darwin-arm64-local",
+    "accuracy_note": ""
   }
 }
