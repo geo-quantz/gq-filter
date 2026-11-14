@@ -16,6 +16,7 @@ from lib.filter import (
     RangeParams,
     VoxelParams,
     ColorCleanParams,
+    ClassificationParams,
     RadiusOutlierParams,
     StatisticalOutlierParams,
     build_pipeline,
@@ -288,6 +289,21 @@ def parse_args(args: List[str]) -> argparse.Namespace:
         help="Minimum number of neighbors required within radius (default: 2).",
     )
 
+    # Classification Filter Group
+    cls_group = parser.add_argument_group("Classification Filter")
+    cls_group.add_argument(
+        "--keep-classes",
+        type=int,
+        nargs="+",
+        metavar="CODE",
+        help=(
+            "Retain only points with these ASPRS classification codes. "
+            "e.g. --keep-classes 2 6  (ground + buildings). "
+            "Common codes: 2=Ground 3=LowVeg 4=MedVeg 5=HighVeg 6=Building "
+            "7=Noise 9=Water 17=Bridge"
+        ),
+    )
+
     # Performance Group
     perf_group = parser.add_argument_group("Performance")
     perf_group.add_argument(
@@ -382,6 +398,11 @@ def assemble_config(args: argparse.Namespace) -> FilterOptions:
             min_k=args.outlier_min_k,
         )
 
+    # Classification filter
+    classification = None
+    if args.keep_classes:
+        classification = ClassificationParams(keep_codes=list(args.keep_classes))
+
     return FilterOptions(
         incidence=incidence,
         intensity=intensity,
@@ -390,6 +411,7 @@ def assemble_config(args: argparse.Namespace) -> FilterOptions:
         color_clean=color_clean,
         duplicate=duplicate,
         ground=ground_params_from_args(args),
+        classification=classification,
         radius_outlier=radius_outlier,
         statistical_outlier=statistical_outlier,
         preset_name=args.preset

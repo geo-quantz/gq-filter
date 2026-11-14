@@ -126,6 +126,23 @@ class RadiusOutlierParams:
 
 
 @dataclass
+class ClassificationParams:
+    """Parameters for ASPRS classification code filter.
+
+    keep_codes: list of LAS classification codes to retain.
+      Common codes: 2=Ground, 3=Low Veg, 4=Med Veg, 5=High Veg,
+                    6=Building, 7=Noise, 9=Water, 17=Bridge
+    If keep_codes is empty and enabled is True, the filter is a no-op.
+    """
+    keep_codes: List[int] = None  # type: ignore[assignment]
+    enabled: bool = True
+
+    def __post_init__(self) -> None:
+        if self.keep_codes is None:
+            self.keep_codes = []
+
+
+@dataclass
 class FilterOptions:
     """Container for all filter parameters, used by the pipeline builder."""
     incidence: Optional[IncidenceAngleParams] = None
@@ -135,6 +152,7 @@ class FilterOptions:
     color_clean: Optional[ColorCleanParams] = None
     duplicate: Optional[DuplicateParams] = None
     ground: Optional[GroundClassifyParams] = None
+    classification: Optional[ClassificationParams] = None
     radius_outlier: Optional[RadiusOutlierParams] = None
     statistical_outlier: Optional[StatisticalOutlierParams] = None
     preset_name: Optional[str] = None
@@ -418,6 +436,23 @@ def build_radius_outlier_filter(
     ]
 
 
+def build_classification_filter(
+        params: Optional[ClassificationParams],
+) -> Optional[Dict[str, Any]]:
+    """Build a classification code filter using filters.expression.
+
+    Retains only points whose Classification dimension matches one of the
+    specified ASPRS codes. If keep_codes is empty the filter is skipped.
+    """
+    if not params or not params.enabled or not params.keep_codes:
+        return None
+    expr = " || ".join(f"Classification == {c}" for c in params.keep_codes)
+    return {
+        "type": FilterType.EXPRESSION,
+        "expression": f"({expr})",
+    }
+
+
 def build_duplicate_filter(
         params: Optional[DuplicateParams],
 ) -> Optional[list]:
@@ -472,29 +507,33 @@ def build_pipeline(
     origin_for_inc = filter_params.range_dist.manual_origin if filter_params.range_dist else None
     inc_stages = build_incidence_angle_filter(filter_params.incidence, input_paths[0], origin_for_inc)
     stages.extend(inc_stages)
-    # 3. Intensity
+    # 3. Classification Code Filter
+    f_cls = build_classification_filter(filter_params.classification)
+    if f_cls: stages.append(f_cls)
+
+    # 4. Intensity
     f_int = build_intensity_filter(filter_params.intensity)
     if f_int: stages.append(f_int)
 
-    # 4. Color Cleaning
+    # 5. Color Cleaning
     stages.extend(build_color_cleaning_stages(filter_params.color_clean))
 
-    # 5. Statistical Outlier Removal
+    # 6. Statistical Outlier Removal
     f_stat = build_statistical_outlier_filter(filter_params.statistical_outlier)
     if f_stat: stages.extend(f_stat)
 
-    # 6. Radius Outlier Removal
+    # 7. Radius Outlier Removal
     f_rad = build_radius_outlier_filter(filter_params.radius_outlier)
     if f_rad: stages.extend(f_rad)
 
     # Ground classification (Issue #3): after noise/color cleaning, before thinning
     stages.extend(build_ground_classify_stages(filter_params.ground))
 
-    # 7. Voxel Downsampling
+    # 8. Voxel Downsampling
     f_vox = build_voxel_filter(filter_params.voxel)
     if f_vox: stages.append(f_vox)
 
-    # 8. Duplicate Removal
+    # 9. Duplicate Removal
     f_dup = build_duplicate_filter(filter_params.duplicate)
     if f_dup:
         if isinstance(f_dup, list):
