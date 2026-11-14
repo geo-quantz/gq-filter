@@ -10,6 +10,7 @@ from lib.filter import (
     IncidenceAngleParams,
     IntensityParams,
     RangeParams,
+    HeightZParams,
     SpatialClipParams,
     ReturnNumberParams,
     ClassificationParams,
@@ -74,6 +75,10 @@ def parse_args(args: List[str]) -> argparse.Namespace:
     )
 
     add_ground_args(parser)
+    # Height (Z) Filter Group
+    z_group = parser.add_argument_group("Height (Z) Filter")
+    z_group.add_argument("--z-min", type=float, metavar="Z", help="Minimum absolute Z elevation to retain.")
+    z_group.add_argument("--z-max", type=float, metavar="Z", help="Maximum absolute Z elevation to retain.")
     # Spatial Clip Group
     clip_group = parser.add_argument_group("Spatial Clip (Bounding Box)")
     clip_group.add_argument("--clip-xmin", type=float, metavar="X", help="Minimum X coordinate.")
@@ -218,12 +223,18 @@ def assemble_config(args: argparse.Namespace) -> FilterOptions:
             z_min=args.clip_zmin, z_max=args.clip_zmax,
         )
 
+    # Height (Z) filter
+    height_z = None
+    if args.z_min is not None or args.z_max is not None:
+        height_z = HeightZParams(z_min=args.z_min, z_max=args.z_max)
+
     return FilterOptions(
         incidence=incidence,
         intensity=intensity,
         range_dist=range_dist,
         duplicate=duplicate,
         ground=ground_params_from_args(args),
+        height_z=height_z,
         spatial_clip=spatial_clip,
         return_number=return_number,
         classification=classification,
