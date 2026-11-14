@@ -12,7 +12,7 @@ body:
     id: version
     attributes:
       label: 版 / Version
-      description: "`gqfilter --version` の結果、またはリリース名"
+      description: "リリース名（例 v0.1.0）、またはソースから使っている場合はコミットの ID"
     validations:
       required: true
   - type: input
