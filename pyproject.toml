@@ -1,6 +1,6 @@
 [project]
 name = "gq-filter"
-version = "0.1.0"
+version = "1.2.0"
 description = "PDAL-based point cloud filtering CLI for surveying workflows (GeoQuantz free edition)"
 readme = "README.md"
 license = "Apache-2.0"
@@ -17,3 +17,10 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["gq_filter"]

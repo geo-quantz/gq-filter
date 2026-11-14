@@ -1,7 +1,7 @@
 import json
 import os
 
-from lib.filter import (
+from gq_filter.filter import (
     FilterOptions,
     IncidenceAngleParams,
     IntensityParams,

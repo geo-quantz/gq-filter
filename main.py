@@ -7,8 +7,8 @@ from datetime import datetime
 from typing import List, Dict, Any, Tuple
 import concurrent.futures
 
-from lib.classify import add_ground_args, ground_params_from_args
-from lib.filter import (
+from gq_filter.classify import add_ground_args, ground_params_from_args
+from gq_filter.filter import (
     DuplicateParams,
     FilterOptions,
     IncidenceAngleParams,

@@ -44,14 +44,14 @@ def _run_gqfilter(input_path: Path, output_path: Path, filter_params: dict) -> d
     Execute gq-filter via its pipeline builder (lib/filter.py), then run the
     resulting pipeline dict via PDAL CLI.
 
-    This approach tests lib.filter.build_pipeline() — the core library logic —
+    This approach tests gq_filter.filter.build_pipeline() — the core library logic —
     without requiring PDAL Python bindings to be importable in the harness
     process (the bindings may be broken due to system library version mismatch).
 
     Returns {"success": bool, "error": str}.
     """
     # Import only the pure-Python parts of lib/filter (no pdal import triggered).
-    from lib.filter import build_pipeline
+    from gq_filter.filter import build_pipeline
     from tests.harness.options import options_from_params
 
     options = options_from_params(filter_params)

@@ -19,6 +19,19 @@
   LAS出力時のスケールを自動で `0.001` に制御し、座標の丸め込み（1cmグリッドへの吸着現象）を完全に防ぎます。
 - **外部プリセットによる柔軟なカスタマイズ**
   環境や機材に応じた設定（`presets.json`）をユーザーが自由に書き換えることができます。
+
+## ライブラリとして使う
+
+`gq_filter` パッケージとして、版（タグ）を固定して取り込めます。PDAL 本体は別途（conda-forge など）で入れてください。
+
+```bash
+uv add "gq-filter @ git+https://github.com/geo-quantz/gq-filter@v1.2.0"
+```
+
+```python
+from gq_filter.filter import FilterOptions, IntensityParams, build_pipeline
+```
+
 ## セットアップ (Windows)
 
 1. **Python 3.10+** をインストール。

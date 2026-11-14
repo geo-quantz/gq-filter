@@ -3,7 +3,7 @@ Harness scenarios: what filter combinations to run against each fixture.
 
 Each scenario is a dict with:
   name           str   — unique name within a fixture
-  filter_params  dict  — passed to lib.filter and reference.build_reference_pipeline()
+  filter_params  dict  — passed to gq_filter.filter and reference.build_reference_pipeline()
   description    str   — human-readable intent (not a pass/fail criterion)
 """
 from __future__ import annotations
