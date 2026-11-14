@@ -132,3 +132,16 @@ def test_pipeline_includes_statistical_outlier():
 
 if __name__ == "__main__":
     test_pipeline_builder()
+
+
+def test_statistical_outlier_runs_before_ground_classification():
+    """Noise must be removed before ground classification (see build_pipeline)."""
+    from lib.classify import GroundClassifyParams
+    from lib.filter import StatisticalOutlierParams
+
+    options = FilterOptions(
+        statistical_outlier=StatisticalOutlierParams(),
+        ground=GroundClassifyParams(method="smrf"),
+    )
+    types = [s["type"] for s in build_pipeline("a.las", "b.las", options)["pipeline"][1:]]
+    assert types.index("filters.outlier") < types.index("filters.smrf")

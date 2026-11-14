@@ -440,12 +440,12 @@ def build_pipeline(
     # 4. Color Cleaning
     stages.extend(build_color_cleaning_stages(filter_params.color_clean))
 
-    # Ground classification (Issue #3): after noise/color cleaning, before thinning
-    stages.extend(build_ground_classify_stages(filter_params.ground))
-
     # 5. Statistical Outlier Removal
     f_stat = build_statistical_outlier_filter(filter_params.statistical_outlier)
     if f_stat: stages.extend(f_stat)
+
+    # Ground classification (Issue #3): after noise/color cleaning, before thinning
+    stages.extend(build_ground_classify_stages(filter_params.ground))
 
     # 6. Voxel Downsampling
     f_vox = build_voxel_filter(filter_params.voxel)
