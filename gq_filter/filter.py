@@ -7,7 +7,7 @@ from datetime import datetime
 from dataclasses import dataclass
 from typing import Optional, Dict, Any, List, Tuple, Union
 
-from lib.classify import GroundClassifyParams, build_ground_classify_stages
+from gq_filter.classify import GroundClassifyParams, build_ground_classify_stages
 
 # pye57 and numpy are optional — only required for E57 support.
 # Import them lazily inside the functions that need them so that

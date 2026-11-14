@@ -3,8 +3,8 @@ import json
 import sys
 from typing import List
 
-from lib.classify import add_ground_args, ground_params_from_args
-from lib.filter import (
+from gq_filter.classify import add_ground_args, ground_params_from_args
+from gq_filter.filter import (
     DuplicateParams,
     FilterOptions,
     IncidenceAngleParams,

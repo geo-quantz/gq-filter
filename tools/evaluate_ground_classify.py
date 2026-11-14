@@ -25,7 +25,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from lib.classify import GROUND_CLASS, GroundClassifyParams, build_ground_classify_stages  # noqa: E402
+from gq_filter.classify import GROUND_CLASS, GroundClassifyParams, build_ground_classify_stages  # noqa: E402
 
 DEFAULT_INPUT = REPO_ROOT / "tests" / "fixtures" / "autzen-small.laz"
 

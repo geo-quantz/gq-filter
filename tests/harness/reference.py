@@ -102,20 +102,20 @@ def build_reference_pipeline(
     output_path: Path,
 ) -> dict | None:
     """
-    Build a PDAL reference pipeline that mirrors what lib.filter would generate.
+    Build a PDAL reference pipeline that mirrors what gq_filter.filter would generate.
 
     Purpose: verify that gq-filter's Python pipeline builder produces the same
     PDAL execution result as calling PDAL CLI with the equivalent pipeline.
     Since gq-filter wraps PDAL, outputs should be byte-for-byte identical.
 
-    For incidence angle, lib.filter now uses filters.normal + dot-product math
+    For incidence angle, gq_filter.filter now uses filters.normal + dot-product math
     (not ScanAngleRank), so we replicate the same stages here.
 
     Returns None if the scenario has no PDAL equivalent.
     """
     import sys as _sys
     _sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-    from lib.filter import build_pipeline
+    from gq_filter.filter import build_pipeline
     from tests.harness.options import options_from_params
 
     options = options_from_params(filter_params)

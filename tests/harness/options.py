@@ -1,13 +1,13 @@
 """
-Scenario `filter_params` dict -> lib.filter.FilterOptions.
+Scenario `filter_params` dict -> gq_filter.filter.FilterOptions.
 
 Shared by runner.py (gq-filter execution) and reference.py (PDAL CLI
 reference) so both sides build options from a scenario in exactly one way.
 """
 from __future__ import annotations
 
-from lib.classify import GroundClassifyParams
-from lib.filter import (
+from gq_filter.classify import GroundClassifyParams
+from gq_filter.filter import (
     DuplicateParams,
     FilterOptions,
     IncidenceAngleParams,

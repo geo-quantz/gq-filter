@@ -57,8 +57,8 @@ wheels = [
 
 [[package]]
 name = "gq-filter"
-version = "0.1.0"
-source = { virtual = "." }
+version = "1.2.0"
+source = { editable = "." }
 dependencies = [
     { name = "pdal" },
 ]

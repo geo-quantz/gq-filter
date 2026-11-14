@@ -8,14 +8,14 @@ import argparse
 
 import pytest
 
-from lib.classify import (
+from gq_filter.classify import (
     GROUND_CLASS,
     GroundClassifyParams,
     add_ground_args,
     build_ground_classify_stages,
     ground_params_from_args,
 )
-from lib.filter import FilterOptions, VoxelParams, build_pipeline
+from gq_filter.filter import FilterOptions, VoxelParams, build_pipeline
 
 
 def _types(stages):

@@ -43,3 +43,12 @@ jobs:
 
       - name: Regression harness
         run: python -m tests.harness.runner
+
+      - name: Library installs and imports (wheel)
+        run: |
+          python -m pip install --quiet build
+          python -m build --wheel --outdir /tmp/wheel .
+          python -m zipfile -l /tmp/wheel/*.whl | awk '{print $1}' | grep -vE '^(File|gq_filter/|gq_filter-)' && { echo "unexpected files in wheel"; exit 1; } || true
+          python -m venv /tmp/venv-wheel
+          /tmp/venv-wheel/bin/pip install --quiet --no-deps /tmp/wheel/*.whl
+          cd /tmp && /tmp/venv-wheel/bin/python -c "import gq_filter.filter, gq_filter.classify; print('import ok')"
