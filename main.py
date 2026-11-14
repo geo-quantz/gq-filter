@@ -354,8 +354,20 @@ def process_file_worker(f_path: str, session_dir: str, filter_params: FilterOpti
         return -1, out_name
 
 
+def _make_console_output_safe() -> None:
+    """Replace characters the console cannot encode instead of crashing.
+
+    Help text contains Japanese (the ground classification group title); a cp1252
+    Windows console would otherwise raise UnicodeEncodeError and abort.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(errors="replace")
+
+
 def main():
     """Main entry point for the CLI tool with batch processing support."""
+    _make_console_output_safe()
     try:
         args = parse_args(sys.argv[1:])
         filter_params = assemble_config(args)
