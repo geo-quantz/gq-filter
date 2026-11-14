@@ -160,6 +160,22 @@ class ReturnNumberParams:
 
 
 @dataclass
+class SpatialClipParams:
+    """Parameters for bounding-box spatial clipping using filters.crop.
+
+    Clips the point cloud to the specified XY (and optionally Z) extent.
+    All bounds are in the same coordinate system as the point cloud.
+    """
+    x_min: Optional[float] = None
+    x_max: Optional[float] = None
+    y_min: Optional[float] = None
+    y_max: Optional[float] = None
+    z_min: Optional[float] = None
+    z_max: Optional[float] = None
+    enabled: bool = True
+
+
+@dataclass
 class FilterOptions:
     """Container for all filter parameters, used by the pipeline builder."""
     incidence: Optional[IncidenceAngleParams] = None
@@ -169,6 +185,7 @@ class FilterOptions:
     color_clean: Optional[ColorCleanParams] = None
     duplicate: Optional[DuplicateParams] = None
     ground: Optional[GroundClassifyParams] = None
+    spatial_clip: Optional[SpatialClipParams] = None
     return_number: Optional[ReturnNumberParams] = None
     classification: Optional[ClassificationParams] = None
     radius_outlier: Optional[RadiusOutlierParams] = None
@@ -488,6 +505,45 @@ def build_return_number_filter(
     }
 
 
+def build_spatial_clip_filter(
+        params: Optional[SpatialClipParams],
+) -> Optional[Dict[str, Any]]:
+    """Build a bounding-box clip stage using filters.crop.
+
+    Generates a PDAL bounds string in the format:
+      ([xmin,xmax],[ymin,ymax])            — XY only
+      ([xmin,xmax],[ymin,ymax],[zmin,zmax]) — with Z
+    Any un-set boundary defaults to ±inf via PDAL's open-ended syntax.
+    """
+    if not params or not params.enabled:
+        return None
+
+    has_xy = any(v is not None for v in [params.x_min, params.x_max, params.y_min, params.y_max])
+    has_z = any(v is not None for v in [params.z_min, params.z_max])
+
+    if not has_xy and not has_z:
+        return None
+
+    def _range(lo: Optional[float], hi: Optional[float]) -> str:
+        lo_str = str(lo) if lo is not None else "-inf"
+        hi_str = str(hi) if hi is not None else "inf"
+        return f"[{lo_str},{hi_str}]"
+
+    x_range = _range(params.x_min, params.x_max)
+    y_range = _range(params.y_min, params.y_max)
+
+    if has_z:
+        z_range = _range(params.z_min, params.z_max)
+        bounds = f"({x_range},{y_range},{z_range})"
+    else:
+        bounds = f"({x_range},{y_range})"
+
+    return {
+        "type": "filters.crop",
+        "bounds": bounds,
+    }
+
+
 def build_duplicate_filter(
         params: Optional[DuplicateParams],
 ) -> Optional[list]:
@@ -542,37 +598,41 @@ def build_pipeline(
     origin_for_inc = filter_params.range_dist.manual_origin if filter_params.range_dist else None
     inc_stages = build_incidence_angle_filter(filter_params.incidence, input_paths[0], origin_for_inc)
     stages.extend(inc_stages)
-    # 3. Return Number Filter
+    # 3. Spatial Clip (bounding box)
+    f_clip = build_spatial_clip_filter(filter_params.spatial_clip)
+    if f_clip: stages.append(f_clip)
+
+    # 4. Return Number Filter
     f_ret = build_return_number_filter(filter_params.return_number)
     if f_ret: stages.append(f_ret)
 
-    # 4. Classification Code Filter
+    # 5. Classification Code Filter
     f_cls = build_classification_filter(filter_params.classification)
     if f_cls: stages.append(f_cls)
 
-    # 5. Intensity
+    # 6. Intensity
     f_int = build_intensity_filter(filter_params.intensity)
     if f_int: stages.append(f_int)
 
-    # 6. Color Cleaning
+    # 7. Color Cleaning
     stages.extend(build_color_cleaning_stages(filter_params.color_clean))
 
-    # 7. Statistical Outlier Removal
+    # 8. Statistical Outlier Removal
     f_stat = build_statistical_outlier_filter(filter_params.statistical_outlier)
     if f_stat: stages.extend(f_stat)
 
-    # 8. Radius Outlier Removal
+    # 9. Radius Outlier Removal
     f_rad = build_radius_outlier_filter(filter_params.radius_outlier)
     if f_rad: stages.extend(f_rad)
 
     # Ground classification (Issue #3): after noise/color cleaning, before thinning
     stages.extend(build_ground_classify_stages(filter_params.ground))
 
-    # 9. Voxel Downsampling
+    # 10. Voxel Downsampling
     f_vox = build_voxel_filter(filter_params.voxel)
     if f_vox: stages.append(f_vox)
 
-    # 10. Duplicate Removal
+    # 11. Duplicate Removal
     f_dup = build_duplicate_filter(filter_params.duplicate)
     if f_dup:
         if isinstance(f_dup, list):

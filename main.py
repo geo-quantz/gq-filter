@@ -16,6 +16,7 @@ from lib.filter import (
     RangeParams,
     VoxelParams,
     ColorCleanParams,
+    SpatialClipParams,
     ReturnNumberParams,
     ClassificationParams,
     RadiusOutlierParams,
@@ -319,6 +320,15 @@ def parse_args(args: List[str]) -> argparse.Namespace:
         ),
     )
 
+    # Spatial Clip Group
+    clip_group = parser.add_argument_group("Spatial Clip (Bounding Box)")
+    clip_group.add_argument("--clip-xmin", type=float, metavar="X", help="Minimum X coordinate for bounding box clip.")
+    clip_group.add_argument("--clip-xmax", type=float, metavar="X", help="Maximum X coordinate for bounding box clip.")
+    clip_group.add_argument("--clip-ymin", type=float, metavar="Y", help="Minimum Y coordinate for bounding box clip.")
+    clip_group.add_argument("--clip-ymax", type=float, metavar="Y", help="Maximum Y coordinate for bounding box clip.")
+    clip_group.add_argument("--clip-zmin", type=float, metavar="Z", help="Minimum Z coordinate for bounding box clip.")
+    clip_group.add_argument("--clip-zmax", type=float, metavar="Z", help="Maximum Z coordinate for bounding box clip.")
+
     # Performance Group
     perf_group = parser.add_argument_group("Performance")
     perf_group.add_argument(
@@ -423,6 +433,16 @@ def assemble_config(args: argparse.Namespace) -> FilterOptions:
     if args.keep_returns:
         return_number = ReturnNumberParams(keep_numbers=list(args.keep_returns))
 
+    # Spatial clip
+    spatial_clip = None
+    clip_vals = [args.clip_xmin, args.clip_xmax, args.clip_ymin, args.clip_ymax, args.clip_zmin, args.clip_zmax]
+    if any(v is not None for v in clip_vals):
+        spatial_clip = SpatialClipParams(
+            x_min=args.clip_xmin, x_max=args.clip_xmax,
+            y_min=args.clip_ymin, y_max=args.clip_ymax,
+            z_min=args.clip_zmin, z_max=args.clip_zmax,
+        )
+
     return FilterOptions(
         incidence=incidence,
         intensity=intensity,
@@ -431,6 +451,7 @@ def assemble_config(args: argparse.Namespace) -> FilterOptions:
         color_clean=color_clean,
         duplicate=duplicate,
         ground=ground_params_from_args(args),
+        spatial_clip=spatial_clip,
         return_number=return_number,
         classification=classification,
         radius_outlier=radius_outlier,
