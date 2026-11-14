@@ -11,6 +11,10 @@ from lib.filter import (
     IntensityParams,
     RangeParams,
     SpatialClipParams,
+    ReturnNumberParams,
+    ClassificationParams,
+    RadiusOutlierParams,
+    StatisticalOutlierParams,
     build_pipeline,
     execute_pipeline,
 )
@@ -78,6 +82,73 @@ def parse_args(args: List[str]) -> argparse.Namespace:
     clip_group.add_argument("--clip-ymax", type=float, metavar="Y", help="Maximum Y coordinate.")
     clip_group.add_argument("--clip-zmin", type=float, metavar="Z", help="Minimum Z coordinate.")
     clip_group.add_argument("--clip-zmax", type=float, metavar="Z", help="Maximum Z coordinate.")
+    # Return Number Filter Group
+    ret_group = parser.add_argument_group("Return Number Filter")
+    ret_group.add_argument(
+        "--keep-returns",
+        type=int,
+        nargs="+",
+        metavar="N",
+        help=(
+            "Retain only points with these LAS ReturnNumber values. "
+            "e.g. --keep-returns 1  (first return only)"
+        ),
+    )
+    # Classification Filter Group
+    cls_group = parser.add_argument_group("Classification Filter")
+    cls_group.add_argument(
+        "--keep-classes",
+        type=int,
+        nargs="+",
+        metavar="CODE",
+        help=(
+            "Retain only points with these ASPRS classification codes. "
+            "Common codes: 2=Ground 3=LowVeg 4=MedVeg 5=HighVeg 6=Building "
+            "7=Noise 9=Water 17=Bridge"
+        ),
+    )
+    # Radius Outlier Removal Group
+    ror_group = parser.add_argument_group("Radius Outlier Removal")
+    ror_group.add_argument(
+        "--outlier-radius",
+        action="store_true",
+        help="Enable radius-based outlier removal (filters.outlier method=radius).",
+    )
+    ror_group.add_argument(
+        "--outlier-radius-value",
+        type=float,
+        default=1.0,
+        metavar="R",
+        help="Search radius for neighbor counting (default: 1.0).",
+    )
+    ror_group.add_argument(
+        "--outlier-min-k",
+        type=int,
+        default=2,
+        metavar="K",
+        help="Minimum neighbors required within radius (default: 2).",
+    )
+    # Statistical Outlier Removal Group
+    sor_group = parser.add_argument_group("Statistical Outlier Removal")
+    sor_group.add_argument(
+        "--outlier-statistical",
+        action="store_true",
+        help="Enable statistical outlier removal (filters.outlier method=statistical).",
+    )
+    sor_group.add_argument(
+        "--outlier-mean-k",
+        type=int,
+        default=8,
+        metavar="K",
+        help="Number of nearest neighbors for outlier detection (default: 8).",
+    )
+    sor_group.add_argument(
+        "--outlier-multiplier",
+        type=float,
+        default=2.0,
+        metavar="M",
+        help="Standard deviation multiplier threshold (default: 2.0).",
+    )
 
     return parser.parse_args(args)
 
@@ -111,6 +182,32 @@ def assemble_config(args: argparse.Namespace) -> FilterOptions:
     if args.deduplicate:
         duplicate = DuplicateParams(enabled=True)
 
+    # Statistical outlier removal
+    statistical_outlier = None
+    if args.outlier_statistical:
+        statistical_outlier = StatisticalOutlierParams(
+            mean_k=args.outlier_mean_k,
+            multiplier=args.outlier_multiplier,
+        )
+
+    # Radius outlier removal
+    radius_outlier = None
+    if args.outlier_radius:
+        radius_outlier = RadiusOutlierParams(
+            radius=args.outlier_radius_value,
+            min_k=args.outlier_min_k,
+        )
+
+    # Classification filter
+    classification = None
+    if args.keep_classes:
+        classification = ClassificationParams(keep_codes=list(args.keep_classes))
+
+    # Return number filter
+    return_number = None
+    if args.keep_returns:
+        return_number = ReturnNumberParams(keep_numbers=list(args.keep_returns))
+
     # Spatial clip
     spatial_clip = None
     clip_vals = [args.clip_xmin, args.clip_xmax, args.clip_ymin, args.clip_ymax, args.clip_zmin, args.clip_zmax]
@@ -128,11 +225,27 @@ def assemble_config(args: argparse.Namespace) -> FilterOptions:
         duplicate=duplicate,
         ground=ground_params_from_args(args),
         spatial_clip=spatial_clip,
+        return_number=return_number,
+        classification=classification,
+        radius_outlier=radius_outlier,
+        statistical_outlier=statistical_outlier,
     )
+
+
+def _make_console_output_safe() -> None:
+    """Replace characters the console cannot encode instead of crashing.
+
+    Help text contains Japanese (the ground classification group title); a cp1252
+    Windows console would otherwise raise UnicodeEncodeError and abort.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(errors="replace")
 
 
 def main():
     """Main entry point for the CLI tool."""
+    _make_console_output_safe()
     try:
         args = parse_args(sys.argv[1:])
         filter_params = assemble_config(args)

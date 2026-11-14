@@ -103,6 +103,63 @@ class DuplicateParams:
 
 
 @dataclass
+class StatisticalOutlierParams:
+    """Parameters for statistical outlier removal.
+    Uses PDAL's filters.outlier (method=statistical) which computes the mean
+    distance to k nearest neighbors and removes points that exceed
+    mean + multiplier * std_dev.
+    """
+    mean_k: int = 8
+    multiplier: float = 2.0
+    enabled: bool = True
+
+
+@dataclass
+class RadiusOutlierParams:
+    """Parameters for radius-based outlier removal.
+    Uses PDAL's filters.outlier (method=radius): points with fewer than
+    min_k neighbors within the given radius are classified as noise and removed.
+    """
+    radius: float = 1.0
+    min_k: int = 2
+    enabled: bool = True
+
+
+@dataclass
+class ClassificationParams:
+    """Parameters for ASPRS classification code filter.
+
+    keep_codes: list of LAS classification codes to retain.
+      Common codes: 2=Ground, 3=Low Veg, 4=Med Veg, 5=High Veg,
+                    6=Building, 7=Noise, 9=Water, 17=Bridge
+    If keep_codes is empty and enabled is True, the filter is a no-op.
+    """
+    keep_codes: List[int] = None  # type: ignore[assignment]
+    enabled: bool = True
+
+    def __post_init__(self) -> None:
+        if self.keep_codes is None:
+            self.keep_codes = []
+
+
+@dataclass
+class ReturnNumberParams:
+    """Parameters for LAS return number filter.
+
+    keep_numbers: list of ReturnNumber values to retain.
+      e.g. [1] = first return only (surface / canopy top)
+           [1, 2] = first and second returns
+    If keep_numbers is empty and enabled is True, the filter is a no-op.
+    """
+    keep_numbers: List[int] = None  # type: ignore[assignment]
+    enabled: bool = True
+
+    def __post_init__(self) -> None:
+        if self.keep_numbers is None:
+            self.keep_numbers = []
+
+
+@dataclass
 class SpatialClipParams:
     """Parameters for bounding-box spatial clipping using filters.crop.
 
@@ -129,6 +186,10 @@ class FilterOptions:
     duplicate: Optional[DuplicateParams] = None
     ground: Optional[GroundClassifyParams] = None
     spatial_clip: Optional[SpatialClipParams] = None
+    return_number: Optional[ReturnNumberParams] = None
+    classification: Optional[ClassificationParams] = None
+    radius_outlier: Optional[RadiusOutlierParams] = None
+    statistical_outlier: Optional[StatisticalOutlierParams] = None
     preset_name: Optional[str] = None
 
 
@@ -356,6 +417,94 @@ def build_color_cleaning_stages(params: Optional[ColorCleanParams]) -> List[Dict
     return stages
 
 
+def build_statistical_outlier_filter(
+        params: Optional[StatisticalOutlierParams],
+) -> Optional[List[Dict[str, Any]]]:
+    """Build a statistical outlier removal stage using filters.outlier.
+
+    PDAL's filters.outlier marks outliers as Classification=7 (noise) rather
+    than removing them. A follow-up filters.expression is therefore required
+    to actually drop those points from the output.
+
+    Returns a two-stage list: [filters.outlier, filters.expression].
+    """
+    if not params or not params.enabled:
+        return None
+    return [
+        {
+            "type": "filters.outlier",
+            "method": "statistical",
+            "mean_k": params.mean_k,
+            "multiplier": params.multiplier,
+        },
+        {
+            "type": FilterType.EXPRESSION,
+            "expression": "Classification != 7",
+        },
+    ]
+
+
+def build_radius_outlier_filter(
+        params: Optional[RadiusOutlierParams],
+) -> Optional[List[Dict[str, Any]]]:
+    """Build a radius-based outlier removal stage using filters.outlier.
+
+    PDAL's filters.outlier marks outliers as Classification=7 (noise) rather
+    than removing them. A follow-up filters.expression is therefore required
+    to actually drop those points from the output.
+
+    Returns a two-stage list: [filters.outlier, filters.expression].
+    """
+    if not params or not params.enabled:
+        return None
+    return [
+        {
+            "type": "filters.outlier",
+            "method": "radius",
+            "radius": params.radius,
+            "min_k": params.min_k,
+        },
+        {
+            "type": FilterType.EXPRESSION,
+            "expression": "Classification != 7",
+        },
+    ]
+
+
+def build_classification_filter(
+        params: Optional[ClassificationParams],
+) -> Optional[Dict[str, Any]]:
+    """Build a classification code filter using filters.expression.
+
+    Retains only points whose Classification dimension matches one of the
+    specified ASPRS codes. If keep_codes is empty the filter is skipped.
+    """
+    if not params or not params.enabled or not params.keep_codes:
+        return None
+    expr = " || ".join(f"Classification == {c}" for c in params.keep_codes)
+    return {
+        "type": FilterType.EXPRESSION,
+        "expression": f"({expr})",
+    }
+
+
+def build_return_number_filter(
+        params: Optional[ReturnNumberParams],
+) -> Optional[Dict[str, Any]]:
+    """Build a return number filter using filters.expression.
+
+    Retains only points whose ReturnNumber matches one of the specified values.
+    Useful for extracting first returns (canopy top) or last returns (ground).
+    """
+    if not params or not params.enabled or not params.keep_numbers:
+        return None
+    expr = " || ".join(f"ReturnNumber == {n}" for n in params.keep_numbers)
+    return {
+        "type": FilterType.EXPRESSION,
+        "expression": f"({expr})",
+    }
+
+
 def build_spatial_clip_filter(
         params: Optional[SpatialClipParams],
 ) -> Optional[Dict[str, Any]]:
@@ -453,21 +602,37 @@ def build_pipeline(
     f_clip = build_spatial_clip_filter(filter_params.spatial_clip)
     if f_clip: stages.append(f_clip)
 
-    # 4. Intensity
+    # 4. Return Number Filter
+    f_ret = build_return_number_filter(filter_params.return_number)
+    if f_ret: stages.append(f_ret)
+
+    # 5. Classification Code Filter
+    f_cls = build_classification_filter(filter_params.classification)
+    if f_cls: stages.append(f_cls)
+
+    # 6. Intensity
     f_int = build_intensity_filter(filter_params.intensity)
     if f_int: stages.append(f_int)
 
-    # 5. Color Cleaning
+    # 7. Color Cleaning
     stages.extend(build_color_cleaning_stages(filter_params.color_clean))
+
+    # 8. Statistical Outlier Removal
+    f_stat = build_statistical_outlier_filter(filter_params.statistical_outlier)
+    if f_stat: stages.extend(f_stat)
+
+    # 9. Radius Outlier Removal
+    f_rad = build_radius_outlier_filter(filter_params.radius_outlier)
+    if f_rad: stages.extend(f_rad)
 
     # Ground classification (Issue #3): after noise/color cleaning, before thinning
     stages.extend(build_ground_classify_stages(filter_params.ground))
 
-    # 6. Voxel Downsampling
+    # 10. Voxel Downsampling
     f_vox = build_voxel_filter(filter_params.voxel)
     if f_vox: stages.append(f_vox)
 
-    # 7. Duplicate Removal
+    # 11. Duplicate Removal
     f_dup = build_duplicate_filter(filter_params.duplicate)
     if f_dup:
         if isinstance(f_dup, list):
