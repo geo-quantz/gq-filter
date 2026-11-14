@@ -364,7 +364,7 @@ def test_pipeline_includes_radius_sample():
 
 
 def test_pipeline_voxel_and_radius_sample_coexist():
-    from lib.filter import VoxelParams
+    from gq_filter.filter import VoxelParams
     options = FilterOptions(
         voxel=VoxelParams(cell_size=0.01),
         radius_sample=RadiusSampleParams(radius=0.05),
@@ -382,8 +382,8 @@ if __name__ == "__main__":
 
 def test_statistical_outlier_runs_before_ground_classification():
     """Noise must be removed before ground classification (see build_pipeline)."""
-    from lib.classify import GroundClassifyParams
-    from lib.filter import StatisticalOutlierParams
+    from gq_filter.classify import GroundClassifyParams
+    from gq_filter.filter import StatisticalOutlierParams
 
     options = FilterOptions(
         statistical_outlier=StatisticalOutlierParams(),
@@ -395,8 +395,8 @@ def test_statistical_outlier_runs_before_ground_classification():
 
 def test_radius_outlier_runs_before_ground_classification():
     """Noise must be removed before ground classification (see build_pipeline)."""
-    from lib.classify import GroundClassifyParams
-    from lib.filter import RadiusOutlierParams
+    from gq_filter.classify import GroundClassifyParams
+    from gq_filter.filter import RadiusOutlierParams
 
     options = FilterOptions(
         radius_outlier=RadiusOutlierParams(),
