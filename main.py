@@ -17,6 +17,7 @@ from lib.filter import (
     VoxelParams,
     ColorCleanParams,
     RadiusOutlierParams,
+    StatisticalOutlierParams,
     build_pipeline,
     execute_pipeline,
     save_report,
@@ -52,6 +53,21 @@ from lib.filter import (
 # -------------------------------
 # Preset Definitions
 # -------------------------------
+def _make_console_output_safe() -> None:
+    """Replace characters the console cannot encode instead of crashing.
+
+    Help text contains Japanese (the ground classification group title); a cp1252
+    Windows console would otherwise raise UnicodeEncodeError and abort.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(errors="replace")
+
+
+# Before load_presets(): it prints Japanese messages at import time.
+_make_console_output_safe()
+
+
 def load_presets() -> Dict[str, Dict[str, Any]]:
     """外部ファイル(presets.json)からプリセットを読み込む。なければデフォルトを作成する。"""
     # 実行ファイル(.exe)やスクリプト(.py)がある場所のディレクトリを取得
@@ -228,6 +244,28 @@ def parse_args(args: List[str]) -> argparse.Namespace:
         help="Enable duplicate point removal (removes exact XYZ matches).",
     )
 
+    # Statistical Outlier Removal Group
+    sor_group = parser.add_argument_group("Statistical Outlier Removal")
+    sor_group.add_argument(
+        "--outlier-statistical",
+        action="store_true",
+        help="Enable statistical outlier removal (filters.outlier method=statistical).",
+    )
+    sor_group.add_argument(
+        "--outlier-mean-k",
+        type=int,
+        default=8,
+        metavar="K",
+        help="Number of nearest neighbors used to compute mean distance (default: 8).",
+    )
+    sor_group.add_argument(
+        "--outlier-multiplier",
+        type=float,
+        default=2.0,
+        metavar="M",
+        help="Standard deviation multiplier threshold; higher = keep more points (default: 2.0).",
+    )
+
     # Radius Outlier Removal Group
     ror_group = parser.add_argument_group("Radius Outlier Removal")
     ror_group.add_argument(
@@ -328,6 +366,14 @@ def assemble_config(args: argparse.Namespace) -> FilterOptions:
     if args.deduplicate or args.merge:
         duplicate = DuplicateParams(enabled=True)
 
+    # Statistical outlier removal
+    statistical_outlier = None
+    if args.outlier_statistical:
+        statistical_outlier = StatisticalOutlierParams(
+            mean_k=args.outlier_mean_k,
+            multiplier=args.outlier_multiplier,
+        )
+
     # Radius outlier removal
     radius_outlier = None
     if args.outlier_radius:
@@ -345,6 +391,7 @@ def assemble_config(args: argparse.Namespace) -> FilterOptions:
         duplicate=duplicate,
         ground=ground_params_from_args(args),
         radius_outlier=radius_outlier,
+        statistical_outlier=statistical_outlier,
         preset_name=args.preset
     )
 
