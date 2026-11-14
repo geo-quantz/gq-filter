@@ -103,6 +103,29 @@ class DuplicateParams:
 
 
 @dataclass
+class StatisticalOutlierParams:
+    """Parameters for statistical outlier removal.
+    Uses PDAL's filters.outlier (method=statistical) which computes the mean
+    distance to k nearest neighbors and removes points that exceed
+    mean + multiplier * std_dev.
+    """
+    mean_k: int = 8
+    multiplier: float = 2.0
+    enabled: bool = True
+
+
+@dataclass
+class RadiusOutlierParams:
+    """Parameters for radius-based outlier removal.
+    Uses PDAL's filters.outlier (method=radius): points with fewer than
+    min_k neighbors within the given radius are classified as noise and removed.
+    """
+    radius: float = 1.0
+    min_k: int = 2
+    enabled: bool = True
+
+
+@dataclass
 class ClassificationParams:
     """Parameters for ASPRS classification code filter.
 
@@ -130,6 +153,8 @@ class FilterOptions:
     duplicate: Optional[DuplicateParams] = None
     ground: Optional[GroundClassifyParams] = None
     classification: Optional[ClassificationParams] = None
+    radius_outlier: Optional[RadiusOutlierParams] = None
+    statistical_outlier: Optional[StatisticalOutlierParams] = None
     preset_name: Optional[str] = None
 
 
@@ -357,6 +382,60 @@ def build_color_cleaning_stages(params: Optional[ColorCleanParams]) -> List[Dict
     return stages
 
 
+def build_statistical_outlier_filter(
+        params: Optional[StatisticalOutlierParams],
+) -> Optional[List[Dict[str, Any]]]:
+    """Build a statistical outlier removal stage using filters.outlier.
+
+    PDAL's filters.outlier marks outliers as Classification=7 (noise) rather
+    than removing them. A follow-up filters.expression is therefore required
+    to actually drop those points from the output.
+
+    Returns a two-stage list: [filters.outlier, filters.expression].
+    """
+    if not params or not params.enabled:
+        return None
+    return [
+        {
+            "type": "filters.outlier",
+            "method": "statistical",
+            "mean_k": params.mean_k,
+            "multiplier": params.multiplier,
+        },
+        {
+            "type": FilterType.EXPRESSION,
+            "expression": "Classification != 7",
+        },
+    ]
+
+
+def build_radius_outlier_filter(
+        params: Optional[RadiusOutlierParams],
+) -> Optional[List[Dict[str, Any]]]:
+    """Build a radius-based outlier removal stage using filters.outlier.
+
+    PDAL's filters.outlier marks outliers as Classification=7 (noise) rather
+    than removing them. A follow-up filters.expression is therefore required
+    to actually drop those points from the output.
+
+    Returns a two-stage list: [filters.outlier, filters.expression].
+    """
+    if not params or not params.enabled:
+        return None
+    return [
+        {
+            "type": "filters.outlier",
+            "method": "radius",
+            "radius": params.radius,
+            "min_k": params.min_k,
+        },
+        {
+            "type": FilterType.EXPRESSION,
+            "expression": "Classification != 7",
+        },
+    ]
+
+
 def build_classification_filter(
         params: Optional[ClassificationParams],
 ) -> Optional[Dict[str, Any]]:
@@ -439,14 +518,22 @@ def build_pipeline(
     # 5. Color Cleaning
     stages.extend(build_color_cleaning_stages(filter_params.color_clean))
 
+    # 6. Statistical Outlier Removal
+    f_stat = build_statistical_outlier_filter(filter_params.statistical_outlier)
+    if f_stat: stages.extend(f_stat)
+
+    # 7. Radius Outlier Removal
+    f_rad = build_radius_outlier_filter(filter_params.radius_outlier)
+    if f_rad: stages.extend(f_rad)
+
     # Ground classification (Issue #3): after noise/color cleaning, before thinning
     stages.extend(build_ground_classify_stages(filter_params.ground))
 
-    # 6. Voxel Downsampling
+    # 8. Voxel Downsampling
     f_vox = build_voxel_filter(filter_params.voxel)
     if f_vox: stages.append(f_vox)
 
-    # 7. Duplicate Removal
+    # 9. Duplicate Removal
     f_dup = build_duplicate_filter(filter_params.duplicate)
     if f_dup:
         if isinstance(f_dup, list):
