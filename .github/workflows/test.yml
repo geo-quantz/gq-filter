@@ -1,0 +1,45 @@
+name: Test
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash -l {0}
+    steps:
+      - name: Checkout (with LFS fixtures)
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Setup Miniforge (conda-forge)
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          miniforge-version: latest
+          python-version: '3.12'
+          auto-activate-base: false
+          activate-environment: test
+          channels: conda-forge
+
+      - name: Install PDAL and test dependencies
+        run: conda install -y -c conda-forge python=3.12 pdal python-pdal numpy pytest
+
+      - name: Unit tests
+        run: python -m pytest -q
+
+      - name: Regression harness
+        run: python -m tests.harness.runner
