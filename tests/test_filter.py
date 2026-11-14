@@ -41,7 +41,19 @@ def test_pipeline_builder():
 
     # Verify structure
     assert "pipeline" in pipeline_dict
-    assert len(pipeline_dict["pipeline"]) == 6  # input + 4 filters + writer
+    stage_types = [
+        s if isinstance(s, str) else s["type"] for s in pipeline_dict["pipeline"]
+    ]
+    assert stage_types == [
+        input_file,
+        "filters.expression",  # range
+        "filters.normal",  # incidence: normals
+        "filters.expression",  # incidence: angle
+        "filters.expression",  # intensity
+        "filters.label_duplicates",  # duplicate: label
+        "filters.expression",  # duplicate: drop
+        "writers.las",
+    ]
     assert pipeline_dict["pipeline"][0] == input_file
     assert pipeline_dict["pipeline"][-1]["type"] == "writers.las"
 
