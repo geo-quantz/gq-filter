@@ -13,7 +13,9 @@ from lib.filter import (
     ReturnNumberParams,
     SpatialClipParams,
     HeightZParams,
+    RadiusSampleParams,
     build_pipeline,
+    build_radius_sample_filter,
     build_height_z_filter,
     build_spatial_clip_filter,
     build_return_number_filter,
@@ -334,6 +336,44 @@ def test_pipeline_includes_height_z():
     stages = pipeline["pipeline"]
     expr_stages = [s for s in stages if isinstance(s, dict) and s.get("type") == "filters.expression"]
     assert any("Z >=" in s.get("expression", "") for s in expr_stages)
+
+
+def test_radius_sample_filter_disabled():
+    assert build_radius_sample_filter(None) is None
+    assert build_radius_sample_filter(RadiusSampleParams(enabled=False)) is None
+
+
+def test_radius_sample_filter_defaults():
+    stage = build_radius_sample_filter(RadiusSampleParams())
+    assert stage is not None
+    assert stage["type"] == "filters.sample"
+    assert stage["radius"] == 0.05
+
+
+def test_radius_sample_filter_custom():
+    stage = build_radius_sample_filter(RadiusSampleParams(radius=0.1))
+    assert stage["radius"] == 0.1
+
+
+def test_pipeline_includes_radius_sample():
+    options = FilterOptions(radius_sample=RadiusSampleParams(radius=0.05))
+    pipeline = build_pipeline("input.las", "output.las", options)
+    stages = pipeline["pipeline"]
+    types = [s.get("type") for s in stages if isinstance(s, dict)]
+    assert "filters.sample" in types
+
+
+def test_pipeline_voxel_and_radius_sample_coexist():
+    from lib.filter import VoxelParams
+    options = FilterOptions(
+        voxel=VoxelParams(cell_size=0.01),
+        radius_sample=RadiusSampleParams(radius=0.05),
+    )
+    pipeline = build_pipeline("input.las", "output.las", options)
+    stages = pipeline["pipeline"]
+    types = [s.get("type") for s in stages if isinstance(s, dict)]
+    assert "filters.voxelcentroidnearestneighbor" in types
+    assert "filters.sample" in types
 
 
 if __name__ == "__main__":

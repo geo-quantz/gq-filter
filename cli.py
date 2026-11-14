@@ -10,6 +10,7 @@ from lib.filter import (
     IncidenceAngleParams,
     IntensityParams,
     RangeParams,
+    RadiusSampleParams,
     HeightZParams,
     SpatialClipParams,
     ReturnNumberParams,
@@ -75,6 +76,14 @@ def parse_args(args: List[str]) -> argparse.Namespace:
     )
 
     add_ground_args(parser)
+    # Radius-based Thinning Group
+    sample_group = parser.add_argument_group("Radius-based Thinning")
+    sample_group.add_argument(
+        "--sample-radius",
+        type=float,
+        metavar="R",
+        help="Minimum spacing between retained points (Poisson disk sampling).",
+    )
     # Height (Z) Filter Group
     z_group = parser.add_argument_group("Height (Z) Filter")
     z_group.add_argument("--z-min", type=float, metavar="Z", help="Minimum absolute Z elevation to retain.")
@@ -228,12 +237,18 @@ def assemble_config(args: argparse.Namespace) -> FilterOptions:
     if args.z_min is not None or args.z_max is not None:
         height_z = HeightZParams(z_min=args.z_min, z_max=args.z_max)
 
+    # Radius-based thinning
+    radius_sample = None
+    if args.sample_radius is not None:
+        radius_sample = RadiusSampleParams(radius=args.sample_radius)
+
     return FilterOptions(
         incidence=incidence,
         intensity=intensity,
         range_dist=range_dist,
         duplicate=duplicate,
         ground=ground_params_from_args(args),
+        radius_sample=radius_sample,
         height_z=height_z,
         spatial_clip=spatial_clip,
         return_number=return_number,

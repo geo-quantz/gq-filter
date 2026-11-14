@@ -16,6 +16,7 @@ from lib.filter import (
     RangeParams,
     VoxelParams,
     ColorCleanParams,
+    RadiusSampleParams,
     HeightZParams,
     SpatialClipParams,
     ReturnNumberParams,
@@ -218,6 +219,19 @@ def parse_args(args: List[str]) -> argparse.Namespace:
         "--vs",
         type=float,
         help="Cell size for voxel centroid downsampling.",
+    )
+
+    # Radius-based Thinning Group
+    sample_group = parser.add_argument_group("Radius-based Thinning (Poisson disk sampling)")
+    sample_group.add_argument(
+        "--sample-radius",
+        type=float,
+        metavar="R",
+        help=(
+            "Minimum spacing between retained points (filters.sample Poisson disk). "
+            "Alternative to --voxel-size: preserves actual coordinates without grid snapping. "
+            "e.g. --sample-radius 0.05  (50mm minimum spacing)"
+        ),
     )
 
     # Color Cleaning Group
@@ -464,6 +478,11 @@ def assemble_config(args: argparse.Namespace) -> FilterOptions:
     if args.z_min is not None or args.z_max is not None:
         height_z = HeightZParams(z_min=args.z_min, z_max=args.z_max)
 
+    # Radius-based thinning
+    radius_sample = None
+    if args.sample_radius is not None:
+        radius_sample = RadiusSampleParams(radius=args.sample_radius)
+
     return FilterOptions(
         incidence=incidence,
         intensity=intensity,
@@ -472,6 +491,7 @@ def assemble_config(args: argparse.Namespace) -> FilterOptions:
         color_clean=color_clean,
         duplicate=duplicate,
         ground=ground_params_from_args(args),
+        radius_sample=radius_sample,
         height_z=height_z,
         spatial_clip=spatial_clip,
         return_number=return_number,
