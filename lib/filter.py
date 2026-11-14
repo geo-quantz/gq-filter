@@ -143,6 +143,23 @@ class ClassificationParams:
 
 
 @dataclass
+class ReturnNumberParams:
+    """Parameters for LAS return number filter.
+
+    keep_numbers: list of ReturnNumber values to retain.
+      e.g. [1] = first return only (surface / canopy top)
+           [1, 2] = first and second returns
+    If keep_numbers is empty and enabled is True, the filter is a no-op.
+    """
+    keep_numbers: List[int] = None  # type: ignore[assignment]
+    enabled: bool = True
+
+    def __post_init__(self) -> None:
+        if self.keep_numbers is None:
+            self.keep_numbers = []
+
+
+@dataclass
 class FilterOptions:
     """Container for all filter parameters, used by the pipeline builder."""
     incidence: Optional[IncidenceAngleParams] = None
@@ -152,6 +169,7 @@ class FilterOptions:
     color_clean: Optional[ColorCleanParams] = None
     duplicate: Optional[DuplicateParams] = None
     ground: Optional[GroundClassifyParams] = None
+    return_number: Optional[ReturnNumberParams] = None
     classification: Optional[ClassificationParams] = None
     radius_outlier: Optional[RadiusOutlierParams] = None
     statistical_outlier: Optional[StatisticalOutlierParams] = None
@@ -453,6 +471,23 @@ def build_classification_filter(
     }
 
 
+def build_return_number_filter(
+        params: Optional[ReturnNumberParams],
+) -> Optional[Dict[str, Any]]:
+    """Build a return number filter using filters.expression.
+
+    Retains only points whose ReturnNumber matches one of the specified values.
+    Useful for extracting first returns (canopy top) or last returns (ground).
+    """
+    if not params or not params.enabled or not params.keep_numbers:
+        return None
+    expr = " || ".join(f"ReturnNumber == {n}" for n in params.keep_numbers)
+    return {
+        "type": FilterType.EXPRESSION,
+        "expression": f"({expr})",
+    }
+
+
 def build_duplicate_filter(
         params: Optional[DuplicateParams],
 ) -> Optional[list]:
@@ -507,33 +542,37 @@ def build_pipeline(
     origin_for_inc = filter_params.range_dist.manual_origin if filter_params.range_dist else None
     inc_stages = build_incidence_angle_filter(filter_params.incidence, input_paths[0], origin_for_inc)
     stages.extend(inc_stages)
-    # 3. Classification Code Filter
+    # 3. Return Number Filter
+    f_ret = build_return_number_filter(filter_params.return_number)
+    if f_ret: stages.append(f_ret)
+
+    # 4. Classification Code Filter
     f_cls = build_classification_filter(filter_params.classification)
     if f_cls: stages.append(f_cls)
 
-    # 4. Intensity
+    # 5. Intensity
     f_int = build_intensity_filter(filter_params.intensity)
     if f_int: stages.append(f_int)
 
-    # 5. Color Cleaning
+    # 6. Color Cleaning
     stages.extend(build_color_cleaning_stages(filter_params.color_clean))
 
-    # 6. Statistical Outlier Removal
+    # 7. Statistical Outlier Removal
     f_stat = build_statistical_outlier_filter(filter_params.statistical_outlier)
     if f_stat: stages.extend(f_stat)
 
-    # 7. Radius Outlier Removal
+    # 8. Radius Outlier Removal
     f_rad = build_radius_outlier_filter(filter_params.radius_outlier)
     if f_rad: stages.extend(f_rad)
 
     # Ground classification (Issue #3): after noise/color cleaning, before thinning
     stages.extend(build_ground_classify_stages(filter_params.ground))
 
-    # 8. Voxel Downsampling
+    # 9. Voxel Downsampling
     f_vox = build_voxel_filter(filter_params.voxel)
     if f_vox: stages.append(f_vox)
 
-    # 9. Duplicate Removal
+    # 10. Duplicate Removal
     f_dup = build_duplicate_filter(filter_params.duplicate)
     if f_dup:
         if isinstance(f_dup, list):

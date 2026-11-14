@@ -16,6 +16,7 @@ from lib.filter import (
     RangeParams,
     VoxelParams,
     ColorCleanParams,
+    ReturnNumberParams,
     ClassificationParams,
     RadiusOutlierParams,
     StatisticalOutlierParams,
@@ -304,6 +305,20 @@ def parse_args(args: List[str]) -> argparse.Namespace:
         ),
     )
 
+    # Return Number Filter Group
+    ret_group = parser.add_argument_group("Return Number Filter")
+    ret_group.add_argument(
+        "--keep-returns",
+        type=int,
+        nargs="+",
+        metavar="N",
+        help=(
+            "Retain only points with these LAS ReturnNumber values. "
+            "e.g. --keep-returns 1  (first return only, canopy/surface top). "
+            "--keep-returns 1 2  (first and second returns)"
+        ),
+    )
+
     # Performance Group
     perf_group = parser.add_argument_group("Performance")
     perf_group.add_argument(
@@ -403,6 +418,11 @@ def assemble_config(args: argparse.Namespace) -> FilterOptions:
     if args.keep_classes:
         classification = ClassificationParams(keep_codes=list(args.keep_classes))
 
+    # Return number filter
+    return_number = None
+    if args.keep_returns:
+        return_number = ReturnNumberParams(keep_numbers=list(args.keep_returns))
+
     return FilterOptions(
         incidence=incidence,
         intensity=intensity,
@@ -411,6 +431,7 @@ def assemble_config(args: argparse.Namespace) -> FilterOptions:
         color_clean=color_clean,
         duplicate=duplicate,
         ground=ground_params_from_args(args),
+        return_number=return_number,
         classification=classification,
         radius_outlier=radius_outlier,
         statistical_outlier=statistical_outlier,
