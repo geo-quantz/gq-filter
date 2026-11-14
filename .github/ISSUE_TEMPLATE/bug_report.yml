@@ -1,0 +1,49 @@
+name: 不具合の報告 / Bug report
+description: gq-filter が期待どおりに動かないとき
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **顧客のデータ、現場名、顧客名、ファイルのパス、座標が分かる情報は書かないでください。**
+        このリポジトリは公開されています。点群ファイルそのものも添付しないでください。
+        Please do not post customer data, site names, file paths, or point cloud files. This repository is public.
+  - type: input
+    id: version
+    attributes:
+      label: 版 / Version
+      description: "リリース名（例 v0.1.0）、またはソースから使っている場合はコミットの ID"
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS
+      placeholder: Windows 11 / Ubuntu 24.04 / macOS 15
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: 実行したコマンドやオプション / Command and options
+      description: パスは `input.las` のように置き換えてください
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期待した結果と実際の結果 / Expected vs actual
+    validations:
+      required: true
+  - type: textarea
+    id: data
+    attributes:
+      label: 入力データの特徴 / Input data characteristics
+      description: 形式（las/laz/e57）、点数、座標系、計測機材の種類など。データそのものは貼らないでください
+  - type: textarea
+    id: log
+    attributes:
+      label: エラーメッセージ / Error output
+      description: パスや現場名が含まれる場合は伏せてください
+      render: text

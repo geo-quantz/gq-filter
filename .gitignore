@@ -1,3 +1,6 @@
+# JetBrains IDE settings (not shared)
+.idea/
+
 ### JetBrains template
 # Covers JetBrains IDEs: IntelliJ, RubyMine, PhpStorm, AppCode, PyCharm, CLion, Android Studio, WebStorm and Rider
 # Reference: https://intellij-support.jetbrains.com/hc/en-us/articles/206544839
@@ -105,3 +108,10 @@ data/raw/*
 
 # Scratch/temp
 temp/
+
+# Local test / scratch outputs
+output.las
+cli_test.las
+clamped.las
+.venv/
+.pytest_cache/

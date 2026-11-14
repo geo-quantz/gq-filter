@@ -1,0 +1,20 @@
+name: 要望 / Feature request
+description: 新しいフィルターやオプションの要望
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **顧客のデータ、現場名、顧客名は書かないでください。**このリポジトリは公開されています。
+        Please do not post customer data or site information. This repository is public.
+  - type: textarea
+    id: problem
+    attributes:
+      label: やりたいこと / What you want to do
+    validations:
+      required: true
+  - type: textarea
+    id: current
+    attributes:
+      label: 今のやり方 / Current workaround
+      description: 使っている他のソフトや手作業があれば
