@@ -16,6 +16,7 @@ from lib.filter import (
     RangeParams,
     VoxelParams,
     ColorCleanParams,
+    RadiusOutlierParams,
     StatisticalOutlierParams,
     build_pipeline,
     execute_pipeline,
@@ -265,6 +266,28 @@ def parse_args(args: List[str]) -> argparse.Namespace:
         help="Standard deviation multiplier threshold; higher = keep more points (default: 2.0).",
     )
 
+    # Radius Outlier Removal Group
+    ror_group = parser.add_argument_group("Radius Outlier Removal")
+    ror_group.add_argument(
+        "--outlier-radius",
+        action="store_true",
+        help="Enable radius-based outlier removal (filters.outlier method=radius).",
+    )
+    ror_group.add_argument(
+        "--outlier-radius-value",
+        type=float,
+        default=1.0,
+        metavar="R",
+        help="Search radius for neighbor counting (default: 1.0).",
+    )
+    ror_group.add_argument(
+        "--outlier-min-k",
+        type=int,
+        default=2,
+        metavar="K",
+        help="Minimum number of neighbors required within radius (default: 2).",
+    )
+
     # Performance Group
     perf_group = parser.add_argument_group("Performance")
     perf_group.add_argument(
@@ -351,6 +374,14 @@ def assemble_config(args: argparse.Namespace) -> FilterOptions:
             multiplier=args.outlier_multiplier,
         )
 
+    # Radius outlier removal
+    radius_outlier = None
+    if args.outlier_radius:
+        radius_outlier = RadiusOutlierParams(
+            radius=args.outlier_radius_value,
+            min_k=args.outlier_min_k,
+        )
+
     return FilterOptions(
         incidence=incidence,
         intensity=intensity,
@@ -359,6 +390,7 @@ def assemble_config(args: argparse.Namespace) -> FilterOptions:
         color_clean=color_clean,
         duplicate=duplicate,
         ground=ground_params_from_args(args),
+        radius_outlier=radius_outlier,
         statistical_outlier=statistical_outlier,
         preset_name=args.preset
     )
