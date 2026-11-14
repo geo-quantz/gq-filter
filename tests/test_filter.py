@@ -7,7 +7,9 @@ from lib.filter import (
     IntensityParams,
     RangeParams,
     DuplicateParams,
+    StatisticalOutlierParams,
     build_pipeline,
+    build_statistical_outlier_filter,
     execute_pipeline,
 )
 
@@ -54,6 +56,8 @@ def test_pipeline_builder():
         "filters.expression",  # duplicate: drop
         "writers.las",
     ]
+    # input + range(1) + normal(1) + incidence(1) + intensity(1) + duplicate(2) + writer(1) = 8
+    assert len(pipeline_dict["pipeline"]) == 8
     assert pipeline_dict["pipeline"][0] == input_file
     assert pipeline_dict["pipeline"][-1]["type"] == "writers.las"
 
@@ -75,5 +79,69 @@ def test_pipeline_builder():
                 print("Note: 'Distance' dimension failure is expected if not in LAS.")
 
 
+def test_statistical_outlier_filter_disabled():
+    result = build_statistical_outlier_filter(None)
+    assert result is None
+
+    result = build_statistical_outlier_filter(StatisticalOutlierParams(enabled=False))
+    assert result is None
+
+
+def test_statistical_outlier_filter_defaults():
+    params = StatisticalOutlierParams()
+    stages = build_statistical_outlier_filter(params)
+    # Returns a two-stage list: [filters.outlier, filters.expression]
+    assert stages is not None
+    assert isinstance(stages, list)
+    assert len(stages) == 2
+    outlier_stage = stages[0]
+    assert outlier_stage["type"] == "filters.outlier"
+    assert outlier_stage["method"] == "statistical"
+    assert outlier_stage["mean_k"] == 8
+    assert outlier_stage["multiplier"] == 2.0
+    expression_stage = stages[1]
+    assert expression_stage["type"] == "filters.expression"
+    assert "Classification != 7" in expression_stage["expression"]
+
+
+def test_statistical_outlier_filter_custom():
+    params = StatisticalOutlierParams(mean_k=16, multiplier=1.5)
+    stages = build_statistical_outlier_filter(params)
+    assert isinstance(stages, list)
+    assert stages[0]["mean_k"] == 16
+    assert stages[0]["multiplier"] == 1.5
+    # Expression stage must still be present
+    assert stages[1]["type"] == "filters.expression"
+
+
+def test_pipeline_includes_statistical_outlier():
+    options = FilterOptions(
+        statistical_outlier=StatisticalOutlierParams(mean_k=8, multiplier=2.0),
+    )
+    pipeline = build_pipeline("input.las", "output.las", options)
+    stages = pipeline["pipeline"]
+    types = [s.get("type") for s in stages if isinstance(s, dict)]
+    # Both the marker stage and the removal expression must be present
+    assert "filters.outlier" in types
+    assert "filters.expression" in types
+    outlier_stage = next(s for s in stages if isinstance(s, dict) and s.get("type") == "filters.outlier")
+    assert outlier_stage["method"] == "statistical"
+    expr_stage = next(s for s in stages if isinstance(s, dict) and s.get("type") == "filters.expression")
+    assert "Classification != 7" in expr_stage["expression"]
+
+
 if __name__ == "__main__":
     test_pipeline_builder()
+
+
+def test_statistical_outlier_runs_before_ground_classification():
+    """Noise must be removed before ground classification (see build_pipeline)."""
+    from lib.classify import GroundClassifyParams
+    from lib.filter import StatisticalOutlierParams
+
+    options = FilterOptions(
+        statistical_outlier=StatisticalOutlierParams(),
+        ground=GroundClassifyParams(method="smrf"),
+    )
+    types = [s["type"] for s in build_pipeline("a.las", "b.las", options)["pipeline"][1:]]
+    assert types.index("filters.outlier") < types.index("filters.smrf")
