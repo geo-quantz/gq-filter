@@ -27,3 +27,19 @@ def test_help_survives_narrow_console_encoding(entry, encoding):
     )
     assert result.returncode == 0, result.stderr.decode(errors="replace")
     assert b"Ground Classification" in result.stdout
+
+
+def test_main_first_run_survives_narrow_console_encoding(tmp_path):
+    """First run (no presets.json next to the script) prints a Japanese notice at import."""
+    script = tmp_path / "main.py"
+    script.write_bytes((ROOT / "main.py").read_bytes())
+    env = {**os.environ, "PYTHONIOENCODING": "cp1252", "PYTHONPATH": str(ROOT)}
+    result = subprocess.run(
+        [sys.executable, str(script), "--help"],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        timeout=60,
+    )
+    assert result.returncode == 0, result.stderr.decode(errors="replace")
+    assert (tmp_path / "presets.json").exists()
