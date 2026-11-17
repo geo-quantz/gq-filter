@@ -307,11 +307,10 @@ def run_pipeline(
     if tile is not None:
         from functools import partial
 
-        from gq_filter.parallel import process_map, resolve_jobs, stop_on_failure
-        from gq_filter.tiling import run_tiled
+        from gq_filter.parallel import resolve_jobs
+        from gq_filter.tiling import isolated_map, run_tiled
 
-        n = resolve_jobs(jobs)
-        map_tasks = partial(process_map, jobs=n, stop=stop_on_failure) if n > 1 else None
+        map_tasks = partial(isolated_map, jobs=resolve_jobs(jobs))
         return run_tiled(pipeline, tile, chunk_size=params.chunk_size, map_tasks=map_tasks)
     decision = decide_mode(pipeline, params)
     try:
