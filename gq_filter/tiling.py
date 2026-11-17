@@ -185,26 +185,29 @@ def _append_tiles(arr, size: float, buffer: float, tmp_dir: str,
     iy = np.floor(arr["Y"] / size).astype(np.int64)
     mx = _neighbour_masks(arr["X"] - ix * size, size, buffer)
     my = _neighbour_masks(arr["Y"] - iy * size, size, buffer)
+    base_x, base_y = int(ix.min()) - 1, int(iy.min()) - 1
+    span = int(iy.max()) - base_y + 2
     for dx in (-1, 0, 1):
         for dy in (-1, 0, 1):
-            mask = mx[dx] & my[dy]
-            if not mask.any():
+            rows = np.flatnonzero(mx[dx] & my[dy])
+            if rows.size == 0:
                 continue
-            part = arr[mask].copy()
-            part[TILE_CORE_DIM] = 1 if (dx, dy) == (0, 0) else 0
-            keys = np.stack([ix[mask] + dx, iy[mask] + dy], axis=1)
-            uniq, inverse = np.unique(keys, axis=0, return_inverse=True)
-            order = np.argsort(inverse.reshape(-1), kind="stable")
-            bounds = np.cumsum(np.bincount(inverse.reshape(-1), minlength=len(uniq)))
-            start = 0
-            for (tx, ty), stop in zip(uniq, bounds):
-                key = (int(tx), int(ty))
+            core = (dx, dy) == (0, 0)
+            # タイル番号を 1 つの整数にして並べ、同じタイルの点をまとめて書く
+            flat = (ix[rows] + dx - base_x) * span + (iy[rows] + dy - base_y)
+            order = np.argsort(flat, kind="stable")
+            flat, rows = flat[order], rows[order]
+            starts = np.flatnonzero(np.r_[True, flat[1:] != flat[:-1]])
+            ends = np.r_[starts[1:], flat.size]
+            for lo, hi in zip(starts, ends):
+                key = (int(flat[lo] // span) + base_x, int(flat[lo] % span) + base_y)
+                part = arr[rows[lo:hi]]
+                part[TILE_CORE_DIM] = 1 if core else 0
                 path = files.setdefault(key, os.path.join(tmp_dir, f"tile_{key[0]}_{key[1]}.bin"))
                 with open(path, "ab") as fh:
-                    part[order[start:stop]].tofile(fh)
-                if (dx, dy) == (0, 0):
-                    core_counts[key] = core_counts.get(key, 0) + int(stop - start)
-                start = stop
+                    part.tofile(fh)
+                if core:
+                    core_counts[key] = core_counts.get(key, 0) + int(hi - lo)
 
 
 def _with_core_dim(dtype):
@@ -290,12 +293,56 @@ def process_tile(task: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _serial_map(fn: Callable[[Dict[str, Any]], Dict[str, Any]], tasks: List[Dict[str, Any]]):
-    """順に処理し、最初の失敗で止める。"""
+    """このプロセスで順に処理し、最初の失敗で止める。"""
     results = []
     for task in tasks:
         results.append(fn(task))
         if not results[-1]["success"]:
             break
+    return results
+
+
+# PDAL の Python バインディングは配列入力のパイプラインを繰り返すとメモリが少しずつ増える
+# （PDAL 2.10 / python-pdal 3.5 で 1 タイルあたり数十 MB）。タイルは別プロセスで処理し、
+# 1 プロセスあたりこのタイル数ごとにプロセスを作り直す。
+# （ProcessPoolExecutor の max_tasks_per_child は spawn と組み合わせると止まることがあるため、
+# 使わずにプールごと作り直す）
+TILE_TASKS_PER_WORKER = 2
+
+
+def tile_crashed(task: Dict[str, Any], exc: BaseException) -> Dict[str, Any]:
+    """タイルを処理するプロセスが落ちたとき（メモリ不足など）の結果。"""
+    return {"key": task["key"], "success": False,
+            "error": f"タイルを処理するプロセスが異常終了しました（メモリ不足の可能性）: {exc!r}"}
+
+
+def isolated_map(fn: Callable[[Dict[str, Any]], Dict[str, Any]], tasks: List[Dict[str, Any]],
+                 jobs: int = 1) -> List[Dict[str, Any]]:
+    """タイルを ``jobs`` 本の別プロセスで処理する。最初の失敗で残りを止める。
+
+    ``jobs × TILE_TASKS_PER_WORKER`` タイルごとにプロセスを作り直す。結果は tasks の順。
+    """
+    import multiprocessing
+    from concurrent.futures import ProcessPoolExecutor
+
+    if len(tasks) <= 1:
+        return _serial_map(fn, tasks)
+    context = multiprocessing.get_context("spawn")
+    workers = max(1, min(jobs, len(tasks)))
+    per_round = workers * TILE_TASKS_PER_WORKER
+    results: List[Dict[str, Any]] = []
+    for start in range(0, len(tasks), per_round):
+        batch = tasks[start:start + per_round]
+        with ProcessPoolExecutor(max_workers=workers, mp_context=context) as pool:
+            futures = [pool.submit(fn, task) for task in batch]
+            for task, future in zip(batch, futures):
+                try:
+                    results.append(future.result())
+                except Exception as exc:  # ワーカーの異常終了（メモリ不足など）
+                    results.append(tile_crashed(task, exc))
+                if not results[-1]["success"]:
+                    pool.shutdown(wait=True, cancel_futures=True)
+                    return results
     return results
 
 
@@ -371,7 +418,8 @@ def run_tiled(
 ) -> Dict[str, Any]:
     """パイプラインをタイル分割で実行する。結果の形は execute_pipeline と同じ（mode="tile"）。
 
-    ``map_tasks(fn, tasks)`` を渡すとタイルの処理をその関数で回す（並列実行用）。
+    ``map_tasks(fn, tasks)`` を渡すとタイルの処理をその関数で回す（並列実行用）。既定は
+    ``isolated_map``（別プロセス 1 本で順に処理）。
     """
     parts = split_stages(pipeline)
     if not parts.rest:
@@ -419,7 +467,7 @@ def run_tiled(
                 "key": key, "input": path, "dtype": dtype.descr, "rest": parts.rest,
                 "writer": _tile_writer(out, key, tile.size, buffer, header, grid),
             })
-        results = (map_tasks or _serial_map)(process_tile, tasks)
+        results = (map_tasks or isolated_map)(process_tile, tasks)
         failed = [r for r in results if not r["success"]]
         if failed:
             first = failed[0]

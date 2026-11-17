@@ -247,6 +247,7 @@ def test_serial_tiles_stop_at_first_failure(cloud, tmp_path, monkeypatch):
     result = run_tiled(
         build_pipeline(str(cloud), str(tmp_path / "o.las"), FilterOptions(duplicate=DuplicateParams())),
         TileParams(size=25.0),
+        map_tasks=tiling._serial_map,
     )
     assert result["success"] is False and "boom" in result["error"]
     assert len(calls) == 1

@@ -22,7 +22,8 @@ if TYPE_CHECKING:
     from gq_filter.tiling import TileParams
 
 STREAM_MODES = ("off", "on", "auto")
-DEFAULT_CHUNK_SIZE = 1_000_000
+# 30M 点の LAS で 1,000,000 と速さが変わらず、タイル分割の振り分けでメモリが増えにくい値
+DEFAULT_CHUNK_SIZE = 100_000
 DEFAULT_THRESHOLD_MB = 1024
 _MB = 1024 * 1024
 

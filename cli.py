@@ -327,4 +327,7 @@ def main():
 
 
 if __name__ == "__main__":
+    import multiprocessing
+
+    multiprocessing.freeze_support()  # 配布用の実行ファイルで別プロセスのワーカーを起動するため
     main()
