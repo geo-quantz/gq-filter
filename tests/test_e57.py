@@ -272,3 +272,26 @@ def test_cli_dry_run_shows_e57_plan(files, tmp_path):
     r = _cli("-i", str(files["multi"]), "-o", str(tmp_path / "x.las"), "--range-max", "5", "--dry-run")
     assert r.returncode == 0, r.stderr
     assert "pye57 でスキャンごとに読み込みます" in r.stdout
+
+
+def test_scan_without_pose_in_large_coordinates(tmp_path):
+    """pose なしで全体座標（大きな値）が記録されたスキャンでも LAS に書ける。"""
+    local = np.random.default_rng(8).random((300, 3)) * 10 + np.array([500_000.0, 4_000_000.0, 30.0])
+    path = write_e57(tmp_path / "big_coords.e57", [Scan(local=local), Scan(local=local + 1.0)])
+    out = tmp_path / "o.las"
+    result = run_inputs(str(path), str(out), FilterOptions(), e57_reader="pye57")
+    assert result["success"], result
+    # pye57 は座標を float32 で書くので、期待値も float32 に丸める
+    expected = np.vstack([local, local + 1.0]).astype("f4").astype("f8")
+    assert_same_points(_xyz(read_points(out)), expected, atol=0.001)
+
+
+def test_disabled_range_is_not_applied(files, tmp_path):
+    options = FilterOptions(range_dist=RangeParams(max_distance=1.0, enabled=False),
+                            incidence=IncidenceAngleParams(min_angle=0.0, max_angle=90.0))
+    result = run_inputs(str(files["multi"]), str(tmp_path / "o.las"), options)
+    assert result["success"], result
+    total = len(files["scans"]["structured"].global_xyz()) + len(files["scans"]["unstructured"].global_xyz())
+    assert result["points_processed"] > _expected_within(files["scans"]["structured"], 1.0) \
+        + _expected_within(files["scans"]["unstructured"], 1.0)
+    assert result["points_processed"] <= total

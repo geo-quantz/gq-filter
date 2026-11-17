@@ -109,7 +109,11 @@ def _node_limits(header, proto, limits_node: str, lo_name: str, hi_name: str, fi
         return None
     for lo, hi in (("scaledMinimum", "scaledMaximum"), ("minimum", "maximum")):
         if hasattr(proto_node, lo) and hasattr(proto_node, hi):
-            return float(getattr(proto_node, lo)()), float(getattr(proto_node, hi)())
+            low, high = float(getattr(proto_node, lo)()), float(getattr(proto_node, hi)())
+            # 範囲を指定していないノードは型の最小・最大（±3.4e38 など）になるので使わない
+            if math.isfinite(low) and math.isfinite(high) and max(abs(low), abs(high)) < 1e15 and high > low:
+                return low, high
+            return None
     return None
 
 
@@ -165,6 +169,16 @@ def read_scans(path: str) -> List[E57Scan]:
     e57 = pye57.E57(path)
     try:
         return [_scan_info(e57, i) for i in range(e57.scan_count)]
+    finally:
+        e57.close()
+
+
+def read_scan(path: str, index: int) -> E57Scan:
+    """E57 の 1 スキャンの情報（pye57 が必要）。"""
+    pye57 = _pye57()
+    e57 = pye57.E57(path)
+    try:
+        return _scan_info(e57, index)
     finally:
         e57.close()
 
@@ -351,25 +365,42 @@ class _ExpandTask:
 
 
 # 1 つの LAS に書く点数の目安（チャンクをためて書き、ファイル数を抑える）
-PART_POINTS = 5_000_000
+PART_POINTS = 1_000_000
 
 
-def _part_writer(filename: str, origin: Origin, has_color: bool) -> Dict[str, Any]:
-    # 器械点のまわり ±214 km まで 0.1 mm で書ける
-    return {
+def _part_writer(filename: str, points, has_color: bool) -> Dict[str, Any]:
+    """offset は点の範囲の中央（pose がなく全体座標で記録されたスキャンでもあふれない）。
+
+    範囲が ±214 km を超えるときだけ 1 mm にする。
+    """
+    writer: Dict[str, Any] = {
         "type": "writers.las", "filename": filename,
         "dataformat_id": 3 if has_color else 1, "minor_version": 4,
-        "scale_x": 0.0001, "scale_y": 0.0001, "scale_z": 0.0001,
-        "offset_x": round(origin[0]), "offset_y": round(origin[1]), "offset_z": round(origin[2]),
     }
+    for axis, dim in (("x", "X"), ("y", "Y"), ("z", "Z")):
+        lo, hi = float(points[dim].min()), float(points[dim].max())
+        mid = round((lo + hi) / 2)
+        scale = 0.0001 if max(hi - mid, mid - lo) / 0.0001 < 2 ** 31 - 1 else 0.001
+        writer[f"scale_{axis}"] = scale
+        writer[f"offset_{axis}"] = mid
+    return writer
 
 
 def expand_scan(task: _ExpandTask) -> ExpandedScan:
     """1 スキャンを LAS に書き出す（別プロセスでも呼べる）。距離フィルターもここでかける。"""
+    try:
+        return _expand_scan(task)
+    except Exception as exc:  # どのファイルのどのスキャンかを付けて送出し直す
+        raise RuntimeError(
+            f"{os.path.basename(task.path)} のスキャン {task.index} を読めませんでした: {exc}"
+        ) from exc
+
+
+def _expand_scan(task: _ExpandTask) -> ExpandedScan:
     import numpy as np
     import pdal
 
-    scan = read_scans(task.path)[task.index]
+    scan = read_scan(task.path, task.index)
     origin = task.origin_override or scan.origin
     files: List[str] = []
     pending: List[Any] = []
@@ -382,7 +413,7 @@ def expand_scan(task: _ExpandTask) -> ExpandedScan:
         points = np.concatenate(pending)
         pending.clear()
         filename = os.path.join(task.out_dir, f"scan{task.index:04d}_{len(files):04d}.las")
-        writer = _part_writer(filename, scan.origin, scan.has_color)
+        writer = _part_writer(filename, points, scan.has_color)
         pdal.Pipeline(json.dumps([writer]), arrays=[points]).execute()
         files.append(filename)
         written += len(points)

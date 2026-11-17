@@ -518,9 +518,8 @@ def process_single_file(
         e57_reader: str = "auto",
 ) -> int:
     """Build and execute pipeline for a single file (tiles run with `jobs` processes)."""
-    pipeline_dict = build_pipeline(input_path, output_path, opt)
-
     if dry_run:
+        pipeline_dict = build_pipeline(input_path, output_path, opt)
         print(f"--- DRY RUN: Pipeline for {input_path} ---")
         print(json.dumps(pipeline_dict, indent=4))
         print(streamability_report(pipeline_dict))

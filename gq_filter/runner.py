@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import warnings
 import tempfile
 from dataclasses import dataclass, replace
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
@@ -28,7 +29,7 @@ from gq_filter.e57 import (
     read_scans,
 )
 from gq_filter.filter import FilterOptions, RangeParams, build_pipeline
-from gq_filter.stream import StreamParams, run_pipeline
+from gq_filter.stream import StreamParams, blocking_stages, run_pipeline
 
 # 段階 1 でたくさんの LAS を同時に開くので、開けるファイル数の上限を上げる
 _WANTED_OPEN_FILES = 4096
@@ -77,9 +78,14 @@ class _Stage1Task:
     tile: Optional[Any]
 
 
+def _active_range(options: FilterOptions) -> Optional[RangeParams]:
+    rd = options.range_dist
+    return rd if rd is not None and rd.enabled else None
+
+
 def _stage1_options(source: _Source, options: FilterOptions) -> Optional[FilterOptions]:
     """段階 1 のフィルター（距離・入射角）。かけるものがなければ None。"""
-    rd = options.range_dist
+    rd = _active_range(options)
     if source.origin is not None:
         # 器械点は RangeParams.manual_origin で渡す（入射角も同じ器械点を使う）
         rng = RangeParams(
@@ -105,7 +111,11 @@ def _run_stage1(task: _Stage1Task) -> Dict[str, Any]:
                 return {"success": True, "files": list(task.source.files), "label": task.source.label}
             stage1 = FilterOptions()  # 書き出した複数の LAS を 1 つにまとめるだけ
         pipeline = build_pipeline(list(task.source.files), task.output, stage1)
-        result = run_pipeline(pipeline, task.stream, task.tile, jobs=1)
+        if blocking_stages(pipeline):  # 入射角（法線）はストリーム非対応
+            result = run_pipeline(pipeline, task.stream, task.tile, jobs=1)
+        else:  # 距離だけ・まとめるだけならストリームで（結果は通常実行と同じ）
+            chunk = task.stream.chunk_size if task.stream else StreamParams().chunk_size
+            result = run_pipeline(pipeline, StreamParams(mode="on", chunk_size=chunk))
     except Exception as exc:  # 1 入力の失敗を結果として返す
         result = {"success": False, "error": str(exc)}
     result.pop("metadata", None)
@@ -148,7 +158,17 @@ def run_inputs(
     n_jobs = resolve_jobs(jobs)
     plans = [plan_e57(p, options, e57_reader) for p in paths]
     expand = [use for use, _ in plans]
-    per_source = needs_scanner_origin(options) and (len(paths) > 1 or any(expand))
+    per_source = needs_scanner_origin(options) and any(is_e57(p) for p in paths) \
+        and (len(paths) > 1 or any(expand))
+    if per_source and any(is_e57(p) and not use for p, use in zip(paths, expand)) and e57_reader != "pdal":
+        try:
+            import pye57  # noqa: F401
+        except ImportError:
+            warnings.warn(
+                "pye57 がないため、E57 の器械点を取得できません。距離・入射角は (0, 0, 0) から"
+                "計算されます（pip install pye57）",
+                stacklevel=2,
+            )
     if not any(expand) and not per_source:
         return run_pipeline(build_pipeline(paths if len(paths) > 1 else paths[0], output, options),
                             stream, tile, jobs=n_jobs)
@@ -162,7 +182,7 @@ def run_inputs(
     try:
         sources: List[_Source] = []
         scan_count = 0
-        rd = options.range_dist
+        rd = _active_range(options)
         for path, use in zip(paths, expand):
             if not use:
                 sources.append(_Source((path,), None, False, os.path.basename(path)))
@@ -202,7 +222,8 @@ def run_inputs(
             writer = build_pipeline("empty.las", output, FilterOptions())["pipeline"][-1]
             result = _write_empty(writer, [("X", "f8"), ("Y", "f8"), ("Z", "f8")])
             result["mode"] = "standard"
-            result["note"] = "距離・入射角のフィルターで全点が除かれました。"
+            result["note"] = ("距離・入射角のフィルターで全点が除かれました。" if per_source
+                              else "入力に有効な点がありませんでした。")
             return result
         result = run_pipeline(build_pipeline(files if len(files) > 1 else files[0], output, rest),
                               stream, tile, jobs=n_jobs)
