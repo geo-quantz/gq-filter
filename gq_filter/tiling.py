@@ -34,16 +34,17 @@ from gq_filter.stream import (
     NON_STREAMABLE_STAGES,
     _execute,
     blocking_stages,
+    centered_grid,
+    common_grid,
+    grid_fits,
     is_reader,
-    las_grid,
 )
 
 TILE_CORE_DIM = "GqTileCore"
 DEFAULT_BUFFER_RATIO = 0.1
-# 一時 LAS の座標の刻み。int32 に収まる範囲（±214 km）を超えるタイルは 1 mm にする
+# LAS 以外の入力の一時 LAS の座標の刻み。int32 に収まらない大きなタイルは 1 mm にする
 _FINE_SCALE = 0.0001
 _COARSE_SCALE = 0.001
-_FINE_SCALE_MAX_HALF_EXTENT = 200_000.0
 
 # 近傍を使うステージ → 必要な重なり幅を決めるオプション名と PDAL の既定値
 _NEIGHBOURHOOD_LENGTHS: Dict[str, Tuple[str, float]] = {
@@ -51,7 +52,10 @@ _NEIGHBOURHOOD_LENGTHS: Dict[str, Tuple[str, float]] = {
     "filters.pmf": ("max_window_size", 33.0),
     "filters.voxelcentroidnearestneighbor": ("cell", 1.0),
     "filters.sample": ("radius", 1.0),
+    "filters.csf": ("resolution", 1.0),
 }
+# 近傍を点数（k）で決めるため、重なり幅を長さで見積もれないステージ
+_KNN_STAGES = ("filters.normal", "filters.outlier")
 
 TileKey = Tuple[int, int]
 
@@ -109,6 +113,8 @@ def split_stages(pipeline: Dict[str, Any]) -> PipelineParts:
     if n_readers == 0:
         raise ValueError("pipeline has no reader")
     readers = stages[:n_readers]
+    if any(not isinstance(s, dict) for s in stages[n_readers:-1]):
+        raise ValueError("readers must come first in the pipeline")
     filters = [s for s in stages[n_readers:-1] if s.get("type") != "filters.merge"]
     first_blocking = next(
         (i for i, s in enumerate(filters) if s.get("type") in NON_STREAMABLE_STAGES), len(filters)
@@ -140,6 +146,13 @@ def resolve_buffer(tile: TileParams, rest: List[Dict[str, Any]]) -> Tuple[float,
                 f"least {need}; use a tile size larger than that"
             )
         return buffer, None
+    knn = [s["type"] for s in rest if s.get("type") in _KNN_STAGES
+           and not (s.get("type") == "filters.outlier" and s.get("method") == "radius")]
+    if tile.buffer == 0 and knn:
+        return 0.0, (
+            f"タイルの重なり幅が 0 です。{', '.join(dict.fromkeys(knn))} は近傍の点を使うため、"
+            "タイル境界付近の結果がタイルなしの実行と変わります。"
+        )
     if tile.buffer < need:
         return tile.buffer, (
             f"タイルの重なり幅 {tile.buffer} がフィルターの近傍の大きさ {need} より小さいため、"
@@ -233,18 +246,7 @@ def split_into_tiles(source: List[Any], size: float, buffer: float, chunk_size: 
 # 2. タイルごとの処理
 # -------------------------------
 
-def _grid_fits(grid: Dict[str, Any], buffer: float) -> bool:
-    """入力の格子のまま一時 LAS に書いても int32 に収まるか。"""
-    b = grid["bounds"]
-    for axis in ("x", "y", "z"):
-        span = max(abs(float(b[f"max{axis}"]) - grid["offset"][axis]),
-                   abs(float(b[f"min{axis}"]) - grid["offset"][axis])) + buffer
-        if span / grid["scale"][axis] >= 2 ** 31 - 1:
-            return False
-    return True
-
-
-def _tile_writer(path: str, key: TileKey, size: float, header: Dict[str, Any],
+def _tile_writer(path: str, key: TileKey, size: float, buffer: float, header: Dict[str, Any],
                  grid: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     """タイルの一時 LAS の writer。LAS 入力は入力と同じ格子で書く（座標が変わらない）。"""
     writer: Dict[str, Any] = {"type": "writers.las", "filename": path}
@@ -253,7 +255,8 @@ def _tile_writer(path: str, key: TileKey, size: float, header: Dict[str, Any],
             writer[f"scale_{axis}"] = grid["scale"][axis]
             writer[f"offset_{axis}"] = grid["offset"][axis]
     else:
-        scale = _FINE_SCALE if size < _FINE_SCALE_MAX_HALF_EXTENT else _COARSE_SCALE
+        half_extent = size / 2 + buffer
+        scale = _FINE_SCALE if half_extent / _FINE_SCALE < 2 ** 31 - 1 else _COARSE_SCALE
         writer.update({
             "scale_x": scale, "scale_y": scale, "scale_z": scale,
             "offset_x": round((key[0] + 0.5) * size), "offset_y": round((key[1] + 0.5) * size),
@@ -270,25 +273,30 @@ def process_tile(task: Dict[str, Any]) -> Dict[str, Any]:
     import numpy as np
     import pdal
 
-    arr = np.fromfile(task["input"], dtype=np.dtype(task["dtype"]))
     stages = [
         *task["rest"],
         {"type": "filters.expression", "expression": f"{TILE_CORE_DIM} == 1"},
         task["writer"],
     ]
     try:
-        pipeline = pdal.Pipeline(json.dumps(stages), arrays=[arr])
-        count = pipeline.execute()
+        arr = np.fromfile(task["input"], dtype=np.dtype([tuple(d) for d in task["dtype"]]))
+        count = pdal.Pipeline(json.dumps(stages), arrays=[arr]).execute()
     except Exception as exc:  # PDAL は RuntimeError などで失敗を返す
         return {"key": task["key"], "success": False, "error": str(exc)}
     finally:
-        del arr
-        os.remove(task["input"])
+        if os.path.exists(task["input"]):
+            os.remove(task["input"])
     return {"key": task["key"], "success": True, "points": count, "output": task["writer"]["filename"]}
 
 
 def _serial_map(fn: Callable[[Dict[str, Any]], Dict[str, Any]], tasks: List[Dict[str, Any]]):
-    return [fn(t) for t in tasks]
+    """順に処理し、最初の失敗で止める。"""
+    results = []
+    for task in tasks:
+        results.append(fn(task))
+        if not results[-1]["success"]:
+            break
+    return results
 
 
 # -------------------------------
@@ -334,6 +342,15 @@ def _merge_outputs(outputs: List[str], writer: Dict[str, Any], chunk_size: int) 
     return _execute(pipeline, chunk_size if stream else None)
 
 
+def _copc_note(writer: Dict[str, Any]) -> Optional[str]:
+    if writer.get("type") in NON_STREAMABLE_STAGES:
+        return (
+            f"出力（{writer['type']}）はストリーム非対応のため、最後の結合は出力全体を"
+            "メモリに読み込んで行いました。"
+        )
+    return None
+
+
 def _write_empty(writer: Dict[str, Any], dtype) -> Dict[str, Any]:
     import numpy as np
     import pdal
@@ -358,6 +375,13 @@ def run_tiled(
     """
     parts = split_stages(pipeline)
     if not parts.rest:
+        if blocking_stages(pipeline):  # 出力（COPC）だけがストリーム非対応
+            result = _execute(pipeline, None)
+            result["note"] = (
+                f"ストリーム非対応なのは出力（{parts.writer['type']}）だけのため、タイル分割せずに"
+                "通常実行しました。"
+            )
+            return result
         result = _execute(pipeline, chunk_size)
         result["note"] = "ストリーム非対応のフィルターがないため、タイル分割せずにストリームで実行しました。"
         return result
@@ -380,9 +404,11 @@ def run_tiled(
             return result
 
         header = _source_header(parts.readers)
-        grid = las_grid(parts.readers[0])
-        if grid is not None and not _grid_fits(grid, buffer):
-            grid = None
+        grid = common_grid(parts.readers)
+        if grid is not None and not grid_fits(grid, grid["scale"], margin=buffer):
+            grid = centered_grid(grid)
+            if not grid_fits(grid, grid["scale"], margin=buffer):
+                grid = None
         tasks = []
         for key, path in sorted(files.items()):
             if core_counts.get(key, 0) == 0:
@@ -391,7 +417,7 @@ def run_tiled(
             out = os.path.join(tmp_dir, f"out_{key[0]}_{key[1]}.las")
             tasks.append({
                 "key": key, "input": path, "dtype": dtype.descr, "rest": parts.rest,
-                "writer": _tile_writer(out, key, tile.size, header, grid),
+                "writer": _tile_writer(out, key, tile.size, buffer, header, grid),
             })
         results = (map_tasks or _serial_map)(process_tile, tasks)
         failed = [r for r in results if not r["success"]]
@@ -410,8 +436,9 @@ def run_tiled(
         result["mode"] = "tile"
         result["tiles"] = len(tasks)
         result["points_read"] = total
-        if note:
-            result["note"] = note
+        notes = [n for n in (note, _copc_note(parts.writer)) if n]
+        if notes:
+            result["note"] = " ".join(notes)
         return result
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
@@ -445,7 +472,10 @@ def add_tile_args(parser: argparse.ArgumentParser) -> None:
     group.add_argument(
         "--work-dir",
         metavar="DIR",
-        help="Directory for temporary tile files (default: next to the output).",
+        help=(
+            "Directory for temporary tile files (default: next to the output). They need about "
+            "points x 40-60 bytes x (1 + overlap) of free space."
+        ),
     )
 
 

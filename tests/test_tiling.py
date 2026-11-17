@@ -197,3 +197,56 @@ def test_main_py_tile_and_stream_options(cloud, tmp_path):
     )
     assert r.returncode == 0, r.stderr
     assert out.exists()
+
+
+def test_copc_output_without_blocking_filters_does_not_raise(cloud, tmp_path):
+    out = tmp_path / "o.copc.laz"
+    result = run_tiled(
+        build_pipeline(str(cloud), str(out), FilterOptions(height_z=HeightZParams(z_min=0))),
+        TileParams(size=50.0),
+    )
+    assert result["success"], result
+    assert result["mode"] == "standard" and "writers.copc" in result["note"]
+
+
+def test_copc_output_with_tiles_notes_final_merge(cloud, tmp_path):
+    out = tmp_path / "o.copc.laz"
+    result = run_tiled(
+        build_pipeline(str(cloud), str(out), FilterOptions(radius_outlier=RadiusOutlierParams())),
+        TileParams(size=50.0),
+    )
+    assert result["success"] and result["mode"] == "tile", result
+    assert "writers.copc" in result["note"]
+
+
+def test_inputs_far_apart_do_not_overflow(tmp_path):
+    near = write_las(tmp_path / "near.las", make_cloud(2_000, origin=(1000.0, 2000.0, 0.0)))
+    far = write_las(tmp_path / "far.las", make_cloud(2_000, origin=(3_001_000.0, 2000.0, 0.0)))
+    options = FilterOptions(radius_outlier=RadiusOutlierParams(radius=2.0))
+    for name, tile in (("stream", None), ("tile", TileParams(size=50.0))):
+        out = tmp_path / f"{name}.las"
+        params = StreamParams(mode="auto", threshold_bytes=1) if tile is None else StreamParams()
+        opts = FilterOptions(height_z=HeightZParams(z_min=-10)) if tile is None else options
+        result = run_pipeline(build_pipeline([str(near), str(far)], str(out), opts), params, tile)
+        assert result["success"], (name, result)
+        assert len(read_points(out)) == result["points_processed"]
+
+
+def test_serial_tiles_stop_at_first_failure(cloud, tmp_path, monkeypatch):
+    import gq_filter.tiling as tiling
+
+    calls = []
+    real = tiling.process_tile
+
+    def failing(task):
+        calls.append(task["key"])
+        result = real(task)
+        return {**result, "success": False, "error": "boom"} if len(calls) == 1 else result
+
+    monkeypatch.setattr(tiling, "process_tile", failing)
+    result = run_tiled(
+        build_pipeline(str(cloud), str(tmp_path / "o.las"), FilterOptions(duplicate=DuplicateParams())),
+        TileParams(size=25.0),
+    )
+    assert result["success"] is False and "boom" in result["error"]
+    assert len(calls) == 1

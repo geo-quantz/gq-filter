@@ -156,18 +156,67 @@ def las_grid(reader: Any) -> Optional[Dict[str, Any]]:
     return {"scale": scale, "offset": offset, "bounds": bounds}
 
 
+def common_grid(readers: List[Any]) -> Optional[Dict[str, Any]]:
+    """すべての入力に共通の格子。どれかが LAS でないか、scale が違えば None。
+
+    offset は最初の入力の格子のもの、bounds は全入力の範囲。
+    """
+    grids = [las_grid(r) for r in readers]
+    if not grids or any(g is None for g in grids):
+        return None
+    first = grids[0]
+    if any(g["scale"] != first["scale"] for g in grids[1:]):
+        return None
+    bounds = {}
+    for axis in _AXES:
+        bounds[f"min{axis}"] = min(float(g["bounds"][f"min{axis}"]) for g in grids)
+        bounds[f"max{axis}"] = max(float(g["bounds"][f"max{axis}"]) for g in grids)
+    return {**first, "bounds": bounds}
+
+
+def grid_fits(grid: Dict[str, Any], scale: Dict[str, float], margin: float = 0.0) -> bool:
+    """grid の offset と与えた scale で、範囲（＋margin）の座標が LAS の int32 に収まるか。"""
+    b = grid["bounds"]
+    for axis in _AXES:
+        o = grid["offset"][axis]
+        span = max(abs(float(b[f"max{axis}"]) - o), abs(float(b[f"min{axis}"]) - o)) + margin
+        if span / scale[axis] >= 2 ** 31 - 1:
+            return False
+    return True
+
+
+def centered_grid(grid: Dict[str, Any]) -> Dict[str, Any]:
+    """offset を範囲の中央に近い格子点に移した grid（離れた入力をまとめるとき用）。"""
+    offset = {}
+    for axis in _AXES:
+        s, o = grid["scale"][axis], grid["offset"][axis]
+        mid = (float(grid["bounds"][f"min{axis}"]) + float(grid["bounds"][f"max{axis}"])) / 2
+        offset[axis] = o + round((mid - o) / s) * s
+    return {**grid, "offset": offset}
+
+
 def with_aligned_offsets(pipeline: Dict[str, Any]) -> Dict[str, Any]:
-    """writers.las の offset が auto なら、入力の格子に乗る値に置き換えたコピーを返す。"""
+    """writers.las の offset が auto なら、入力の格子に乗る値に置き換えたコピーを返す。
+
+    入力が LAS でない・入力ごとに scale が違う・int32 に収まらない、のどれかなら元のまま。
+    """
     stages = pipeline.get("pipeline", [])
     if not stages or not isinstance(stages[-1], dict) or stages[-1].get("type") != "writers.las":
         return pipeline
     writer = stages[-1]
     if not any(writer.get(f"offset_{a}") == "auto" for a in _AXES):
         return pipeline
-    readers = [s for s in stages if is_reader(s)]
-    grid = las_grid(readers[0]) if readers else None
+    grid = common_grid([s for s in stages if is_reader(s)])
     if grid is None:
         return pipeline
+    scale = {}
+    for axis in _AXES:
+        value = writer.get(f"scale_{axis}")
+        scale[axis] = float(value) if isinstance(value, (int, float)) else grid["scale"][axis]
+    if not grid_fits(grid, scale):
+        grid = centered_grid(grid)
+        if not grid_fits(grid, scale):
+            return pipeline
     new_writer = dict(writer)
     for axis in _AXES:
         if writer.get(f"offset_{axis}") == "auto":
@@ -180,18 +229,23 @@ def with_aligned_offsets(pipeline: Dict[str, Any]) -> Dict[str, Any]:
 # -------------------------------
 
 def _execute(pipeline: Dict[str, Any], chunk_size: Optional[int]) -> Dict[str, Any]:
-    """PDAL を実行して execute_pipeline と同じ形の結果を返す。chunk_size があればストリーム。"""
+    """PDAL を実行して execute_pipeline と同じ形の結果を返す。chunk_size があればストリーム。
+
+    通常実行は ``execute_pipeline`` に任せる。どちらも LAS 出力の offset を入力の格子に合わせる。
+    """
+    pipeline = with_aligned_offsets(pipeline)
+    if chunk_size is None:
+        from gq_filter.filter import execute_pipeline
+
+        return {**execute_pipeline(pipeline), "mode": "standard"}
+
     import pdal  # 遅延 import（PDAL の Python バインディングは実行時だけ必要）
 
     try:
-        pipeline = with_aligned_offsets(pipeline)
         pl = pdal.Pipeline(json.dumps(pipeline))
-        if chunk_size is None:
-            count = pl.execute()
-        else:
-            if not pl.streamable:
-                raise NotStreamableError(blocking_stages(pipeline) or ["(PDAL がストリーム非対応と判定)"])
-            count = pl.execute_streaming(chunk_size=chunk_size)
+        if not pl.streamable:
+            raise NotStreamableError(blocking_stages(pipeline) or ["(PDAL がストリーム非対応と判定)"])
+        count = pl.execute_streaming(chunk_size=chunk_size)
         raw_md = pl.metadata
         md = json.loads(raw_md) if isinstance(raw_md, str) else raw_md
         return {
@@ -199,7 +253,7 @@ def _execute(pipeline: Dict[str, Any], chunk_size: Optional[int]) -> Dict[str, A
             "points_processed": count,
             "metadata": md,
             "log": pl.log,
-            "mode": "standard" if chunk_size is None else "stream",
+            "mode": "stream",
         }
     except NotStreamableError:
         raise
@@ -252,7 +306,15 @@ def run_pipeline(
 
         return run_tiled(pipeline, tile, chunk_size=params.chunk_size)
     decision = decide_mode(pipeline, params)
-    result = _execute(pipeline, params.chunk_size if decision["stream"] else None)
+    try:
+        result = _execute(pipeline, params.chunk_size if decision["stream"] else None)
+    except NotStreamableError as exc:
+        if params.mode == "on":
+            raise
+        # 表にないステージを PDAL がストリーム非対応と判定したとき（auto）は通常実行に戻す
+        result = _execute(pipeline, None)
+        result["note"] = f"ストリーム読込できないため通常実行しました: {describe_stages(exc.stages)}"
+        return result
     if decision["note"]:
         result["note"] = decision["note"]
     return result
