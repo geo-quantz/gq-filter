@@ -9,8 +9,8 @@
 - **自動器械点取得**: E57構造化ファイルからスキャナ位置を自動抽出し、距離フィルタを適用。
 - **色クリーニング**: オルソ画像参照によるゴースト除去、または輝度ベースの簡易除去。
 - **自動レポート**: 適用設定と処理点数を `processing_report.txt` に自動記録。
-- **マルチコア並列処理による爆速バッチ処理**
-  フォルダ内の複数の点群ファイルを自動認識し、CPUコアをフル活用して同時にフィルタリングを実行します。
+- **マルチコア並列処理**
+  複数の点群ファイル、またはタイル分割したタイルを、CPU コアの数だけ別プロセスで同時に処理します（`--jobs`）。
 - **真の入射角（掠射角）フィルター**
   単なる角度ではなく、点群から法線ベクトルを計算し、レーザーの入射軌跡との内積から正確な掠射角（デフォルト4度以上）を担保してノイズを除去します。
 - **E57メタデータの自動解析**
@@ -257,6 +257,28 @@ pipeline = build_pipeline("in.las", "out.las", FilterOptions(...))
 result = run_pipeline(pipeline, StreamParams(mode="auto"))          # ストリーム
 result = run_pipeline(pipeline, StreamParams(), TileParams(size=250))  # タイル分割
 ```
+
+## 並列処理（--jobs）
+
+PDAL は 1 本のパイプラインを 1 つの CPU コアで実行します。そこで、互いに独立した処理を別々のプロセスで同時に実行します（スレッドではなくプロセス）。
+
+| 対象 | 並列にする単位 | 使い方 |
+| :--- | :--- | :--- |
+| 複数の入力ファイル | ファイル | `cli.py -i a.las b.las ... -o 出力ディレクトリ`、またはディレクトリを `-i` に指定。`main.py` はディレクトリ入力 |
+| タイル分割（`--tile`） | タイル | 1 ファイルを `--tile` で処理するとき |
+
+- `--jobs N`（`-j N`）: 同時に動かすプロセス数。既定は CPU コア数。`main.py` の `--max-workers` / `-w` は同じ意味の旧名です
+- メモリ使用量はおおむね「1 本分 × N」になります。大きなファイルを並列にするときは N を減らすか、`--stream` / `--tile` と組み合わせてください
+- 1 つのファイルが失敗しても残りは処理し、最後に失敗したファイルを表示して終了コード 1 で終わります。タイルは 1 つでも失敗したら残りを止めます
+
+```bash
+# 16 ファイルを 16 並列で外れ値除去
+python cli.py -i tiles/ -o out/ --outlier-radius --outlier-radius-value 0.5 --jobs 16
+# 1 ファイルを 250m タイルに分けて 16 並列
+python cli.py -i big.las -o out.las --outlier-radius --outlier-radius-value 0.5 --tile 250 --jobs 16
+```
+
+ライブラリからは `gq_filter.parallel.run_files(batch_outputs(inputs, out_dir), options, jobs=N)`、タイルは `run_pipeline(pipeline, StreamParams(), TileParams(size=...), jobs=N)` で使えます。
 
 ## 開発とテスト
 ```powershell

@@ -16,6 +16,7 @@ from gq_filter.stream import (
     streamability_report,
 )
 from gq_filter.tiling import TileParams, add_tile_args, tile_params_from_args
+from gq_filter.parallel import add_jobs_arg, resolve_jobs
 from gq_filter.filter import (
     DuplicateParams,
     FilterOptions,
@@ -366,15 +367,8 @@ def parse_args(args: List[str]) -> argparse.Namespace:
         help="Maximum absolute elevation (Z) to retain. Removes high-altitude outliers.",
     )
 
-    # Performance Group
-    perf_group = parser.add_argument_group("Performance")
-    perf_group.add_argument(
-        "--max-workers",
-        "-w",
-        type=int,
-        default=None,
-        help="並列処理の最大数。指定しない場合は (CPUコア数 - 1) が自動設定されます。",
-    )
+    # Performance Group（--max-workers / -w は旧名）
+    add_jobs_arg(parser, "--max-workers", "-w")
 
     add_ground_args(parser)
     add_stream_args(parser)
@@ -518,8 +512,9 @@ def process_single_file(
         dry_run: bool,
         stream: StreamParams = None,
         tile: TileParams = None,
+        jobs: int = 1,
 ) -> int:
-    """Build and execute pipeline for a single file."""
+    """Build and execute pipeline for a single file (tiles run with `jobs` processes)."""
     pipeline_dict = build_pipeline(input_path, output_path, opt)
 
     if dry_run:
@@ -529,7 +524,7 @@ def process_single_file(
         return 0
 
     print(f"Processing: {os.path.basename(input_path)} -> {os.path.basename(output_path)}")
-    result = run_pipeline(pipeline_dict, stream, tile)
+    result = run_pipeline(pipeline_dict, stream, tile, jobs=jobs)
     
     if result["success"]:
         if result.get("note"):
@@ -596,12 +591,8 @@ def main():
             session_dir = os.path.join(args.output, f"{preset_tag}_{now_str}")
             os.makedirs(session_dir, exist_ok=True)
             
-            safe_workers = args.max_workers
-            if safe_workers is None:
-                # CPUコア数から1を引いた数を最大とする（OSのために1コア残す、最低でも1は確保）
-                cpu_cores = os.cpu_count() or 4
-                safe_workers = max(1, cpu_cores - 1)
-                # メモリが心配な場合は、ここを min(max(1, cpu_cores - 1), 6) などにして上限を6にするのも手です
+            # 既定は CPU コア数。メモリが足りないときは --jobs を減らす
+            safe_workers = min(resolve_jobs(args.jobs), len(input_files))
 
             print(f"Starting batch processing of {len(input_files)} files using {safe_workers} parallel workers...")
             
@@ -645,7 +636,7 @@ def main():
                 print(streamability_report(pipeline_dict))
             else:
                 print(f"Merging {len(input_files)} files into {output_path}...")
-                result = run_pipeline(pipeline_dict, stream_params, tile_params)
+                result = run_pipeline(pipeline_dict, stream_params, tile_params, jobs=resolve_jobs(args.jobs))
                 if result["success"]:
                     if result.get("note"):
                         print(f"[INFO] {result['note']}")
@@ -657,7 +648,7 @@ def main():
         else:
             # Single file mode
             pts = process_single_file(args.input, args.output, filter_params, args.dry_run,
-                                      stream_params, tile_params)
+                                      stream_params, tile_params, resolve_jobs(args.jobs))
             if pts >= 0 and not args.dry_run:
                 print(f"Success! Points processed: {pts}")
                 out_dir = os.path.dirname(args.output) or "."

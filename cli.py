@@ -1,5 +1,6 @@
 import argparse
 import json
+import os
 import sys
 from typing import List
 
@@ -11,6 +12,7 @@ from gq_filter.stream import (
     streamability_report,
 )
 from gq_filter.tiling import add_tile_args, tile_params_from_args
+from gq_filter.parallel import add_jobs_arg, batch_outputs, collect_inputs, resolve_jobs, run_files
 from gq_filter.filter import (
     DuplicateParams,
     FilterOptions,
@@ -36,10 +38,15 @@ def parse_args(args: List[str]) -> argparse.Namespace:
 
     # Core IO arguments
     parser.add_argument(
-        "--input", "-i", required=True, help="Path to the input point cloud file."
+        "--input", "-i", required=True, nargs="+",
+        help=(
+            "Input point cloud file(s) or directories. With several inputs (or a directory) "
+            "each file is processed separately, in parallel (--jobs)."
+        ),
     )
     parser.add_argument(
-        "--output", "-o", required=True, help="Path to the output point cloud file."
+        "--output", "-o", required=True,
+        help="Output file, or the output directory when several inputs are given.",
     )
     parser.add_argument(
         "--dry-run",
@@ -84,6 +91,7 @@ def parse_args(args: List[str]) -> argparse.Namespace:
     add_ground_args(parser)
     add_stream_args(parser)
     add_tile_args(parser)
+    add_jobs_arg(parser)
     # Radius-based Thinning Group
     sample_group = parser.add_argument_group("Radius-based Thinning")
     sample_group.add_argument(
@@ -287,6 +295,65 @@ def describe_mode(result: dict) -> str:
     return "Mode: 通常（全点をメモリに読み込み）"
 
 
+def report_failure(result: dict) -> None:
+    print(f"Pipeline execution failed: {result['error']}", file=sys.stderr)
+    if result.get("log"):
+        print(f"Log: {result['log']}", file=sys.stderr)
+
+
+def run_single(input_path, output_path, filter_params, stream_params, tile_params, jobs, dry_run) -> None:
+    """One input file -> one output file (tiles run in parallel with --jobs)."""
+    pipeline_dict = build_pipeline(input_path, output_path, filter_params)
+
+    if dry_run:
+        print("--- DRY RUN: Generated PDAL Pipeline ---")
+        print(json.dumps(pipeline_dict, indent=4))
+        print(streamability_report(pipeline_dict))
+        return
+
+    print(f"Executing pipeline: {input_path} -> {output_path}")
+    result = run_pipeline(pipeline_dict, stream_params, tile_params, jobs=jobs)
+
+    if not result["success"]:
+        report_failure(result)
+        sys.exit(1)
+    print("Pipeline execution completed successfully.")
+    print(describe_mode(result))
+    print(f"Points processed: {result['points_processed']}")
+    if "note" in result:
+        print(f"Note: {result['note']}")
+
+
+def run_batch(inputs, output_dir, filter_params, stream_params, tile_params, jobs, dry_run) -> None:
+    """Several inputs -> one output per input in output_dir, files in parallel."""
+    file_jobs = batch_outputs(collect_inputs(inputs), output_dir)
+    if not file_jobs:
+        raise ValueError(f"no .las / .laz / .e57 files found in {', '.join(inputs)}")
+
+    if dry_run:
+        for job in file_jobs:
+            pipeline_dict = build_pipeline(job.input, job.output, filter_params)
+            print(f"--- DRY RUN: Pipeline for {job.input} ---")
+            print(json.dumps(pipeline_dict, indent=4))
+            print(streamability_report(pipeline_dict))
+        return
+
+    n = min(jobs, len(file_jobs))
+    print(f"Processing {len(file_jobs)} files with {n} 並列 (--jobs) -> {output_dir}")
+    results = run_files(file_jobs, filter_params, stream=stream_params, tile=tile_params, jobs=n)
+    failed = [r for r in results if not r["success"]]
+    for r in results:
+        if r["success"]:
+            print(f"[OK] {os.path.basename(r['input'])}: {r['points_processed']} points ({describe_mode(r)})")
+            if "note" in r:
+                print(f"     Note: {r['note']}")
+    for r in failed:
+        print(f"[FAILED] {r['input']}: {r['error']}", file=sys.stderr)
+    print(f"Done: {len(results) - len(failed)} succeeded, {len(failed)} failed.")
+    if failed:
+        sys.exit(1)
+
+
 def main():
     """Main entry point for the CLI tool."""
     _make_console_output_safe()
@@ -297,29 +364,12 @@ def main():
         stream_params = stream_params_from_args(args)
         tile_params = tile_params_from_args(args)
 
-        # Build the pipeline dictionary using the existing builder logic
-        pipeline_dict = build_pipeline(args.input, args.output, filter_params)
-
-        if args.dry_run:
-            print("--- DRY RUN: Generated PDAL Pipeline ---")
-            print(json.dumps(pipeline_dict, indent=4))
-            print(streamability_report(pipeline_dict))
-            return
-
-        print(f"Executing pipeline: {args.input} -> {args.output}")
-        result = run_pipeline(pipeline_dict, stream_params, tile_params)
-
-        if result["success"]:
-            print("Pipeline execution completed successfully.")
-            print(describe_mode(result))
-            print(f"Points processed: {result['points_processed']}")
-            if "note" in result:
-                print(f"Note: {result['note']}")
+        jobs = resolve_jobs(args.jobs)
+        single = len(args.input) == 1 and not os.path.isdir(args.input[0])
+        if single:
+            run_single(args.input[0], args.output, filter_params, stream_params, tile_params, jobs, args.dry_run)
         else:
-            print(f"Pipeline execution failed: {result['error']}", file=sys.stderr)
-            if result.get("log"):
-                print(f"Log: {result['log']}", file=sys.stderr)
-            sys.exit(1)
+            run_batch(args.input, args.output, filter_params, stream_params, tile_params, jobs, args.dry_run)
 
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)

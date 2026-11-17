@@ -7,6 +7,8 @@
 - [x] 大容量ファイルモード: `--stream {off,on,auto}` / `--chunk-size` / `--stream-threshold-mb`（PDAL のストリーム実行）。ストリーム非対応のフィルターは名前を示してエラー（on）または通常実行に戻す（auto）
 - [x] タイル分割モード: `--tile` / `--tile-buffer` / `--work-dir`。ストリーム非対応のフィルターを大容量ファイルに使う
 - [x] ライブラリ API: `gq_filter.stream`（`StreamParams`, `run_pipeline`, `blocking_stages`）、`gq_filter.tiling`（`TileParams`, `run_tiled`）
+- [x] 並列処理: `--jobs N`（既定は CPU コア数）。複数ファイルはファイル単位、`--tile` はタイル単位でプロセス並列。`cli.py` は `-i` に複数ファイル・ディレクトリを受け付ける。`main.py` の `--max-workers` は `--jobs` の旧名（既定を CPU コア数 - 1 から CPU コア数に変更）
+- [x] ライブラリ API: `gq_filter.parallel`（`run_files`, `batch_outputs`, `collect_inputs`, `process_map`）、`run_pipeline(..., jobs=N)`
 - [x] LAS/LAZ 出力の offset を入力の座標の格子に合わせる（`run_pipeline` 経由。`offset: auto` による最大 0.5 mm のずれをなくす）
 - [ ] 簡易 GUI の作成（入出力ファイル指定のみの製品化向け GUI）
 

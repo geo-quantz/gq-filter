@@ -294,18 +294,25 @@ def run_pipeline(
         pipeline: Dict[str, Any],
         params: Optional[StreamParams] = None,
         tile: Optional["TileParams"] = None,
+        jobs: Optional[int] = 1,
 ) -> Dict[str, Any]:
     """ストリーム・タイルの設定に従ってパイプラインを実行する。
 
     結果は ``execute_pipeline`` と同じ形の dict に ``mode``（``standard`` / ``stream`` /
     ``tile``）を足したもの。``params`` も ``tile`` も省略すると通常実行。
     ``tile`` を渡すとタイル分割で実行する（読み込みと結合は ``params.chunk_size`` のストリーム）。
+    ``jobs`` はタイルを同時に処理するプロセス数（None で CPU コア数、既定 1）。
     """
     params = params or StreamParams()
     if tile is not None:
+        from functools import partial
+
+        from gq_filter.parallel import process_map, resolve_jobs, stop_on_failure
         from gq_filter.tiling import run_tiled
 
-        return run_tiled(pipeline, tile, chunk_size=params.chunk_size)
+        n = resolve_jobs(jobs)
+        map_tasks = partial(process_map, jobs=n, stop=stop_on_failure) if n > 1 else None
+        return run_tiled(pipeline, tile, chunk_size=params.chunk_size, map_tasks=map_tasks)
     decision = decide_mode(pipeline, params)
     try:
         result = _execute(pipeline, params.chunk_size if decision["stream"] else None)
