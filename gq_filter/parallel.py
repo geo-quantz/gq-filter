@@ -21,8 +21,8 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, TypeVar
 
-from gq_filter.filter import FilterOptions, build_pipeline
-from gq_filter.stream import StreamParams, run_pipeline
+from gq_filter.filter import FilterOptions
+from gq_filter.stream import StreamParams
 
 T = TypeVar("T")
 R = TypeVar("R")
@@ -156,6 +156,7 @@ class _FileTask:
     stream: Optional[StreamParams]
     tile: Optional[Any]
     tile_jobs: int = 1
+    e57_reader: str = "auto"
 
 
 def _run_file(task: _FileTask) -> Dict[str, Any]:
@@ -163,8 +164,10 @@ def _run_file(task: _FileTask) -> Dict[str, Any]:
     try:
         out_dir = os.path.dirname(os.path.abspath(task.job.output))
         os.makedirs(out_dir, exist_ok=True)
-        pipeline = build_pipeline(task.job.input, task.job.output, task.options)
-        result = run_pipeline(pipeline, task.stream, task.tile, jobs=task.tile_jobs)
+        from gq_filter.runner import run_inputs
+
+        result = run_inputs(task.job.input, task.job.output, task.options, stream=task.stream,
+                            tile=task.tile, jobs=task.tile_jobs, e57_reader=task.e57_reader)
     except Exception as exc:  # 1 ファイルの失敗で他のファイルを止めない
         result = {"success": False, "error": str(exc), "log": ""}
     result.pop("metadata", None)  # プロセス間で大きな dict を送らない
@@ -188,6 +191,7 @@ def run_files(
         stream: Optional[StreamParams] = None,
         tile: Optional[Any] = None,
         jobs: Optional[int] = None,
+        e57_reader: str = "auto",
 ) -> List[Dict[str, Any]]:
     """複数のファイルをそれぞれ処理する（ファイル単位で並列）。結果は jobs_list の順。
 
@@ -198,7 +202,7 @@ def run_files(
     n = resolve_jobs(jobs)
     file_procs = max(1, min(n, len(jobs_list)))
     tile_jobs = max(1, n // file_procs) if tile is not None else 1
-    tasks = [_FileTask(job, options, stream, tile, tile_jobs) for job in jobs_list]
+    tasks = [_FileTask(job, options, stream, tile, tile_jobs, e57_reader) for job in jobs_list]
     return process_map(_run_file, tasks, file_procs, on_error=_crashed)
 
 

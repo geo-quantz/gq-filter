@@ -11,12 +11,13 @@ from gq_filter.classify import add_ground_args, ground_params_from_args
 from gq_filter.stream import (
     StreamParams,
     add_stream_args,
-    run_pipeline,
     stream_params_from_args,
     streamability_report,
 )
 from gq_filter.tiling import TileParams, add_tile_args, tile_params_from_args
 from gq_filter.parallel import add_jobs_arg, check_not_overwriting, resolve_jobs
+from gq_filter.e57 import add_e57_args
+from gq_filter.runner import run_inputs
 from gq_filter.filter import (
     DuplicateParams,
     FilterOptions,
@@ -373,6 +374,7 @@ def parse_args(args: List[str]) -> argparse.Namespace:
     add_ground_args(parser)
     add_stream_args(parser)
     add_tile_args(parser)
+    add_e57_args(parser)
 
     return parser.parse_args(args)
 
@@ -513,6 +515,7 @@ def process_single_file(
         stream: StreamParams = None,
         tile: TileParams = None,
         jobs: int = 1,
+        e57_reader: str = "auto",
 ) -> int:
     """Build and execute pipeline for a single file (tiles run with `jobs` processes)."""
     pipeline_dict = build_pipeline(input_path, output_path, opt)
@@ -524,7 +527,8 @@ def process_single_file(
         return 0
 
     print(f"Processing: {os.path.basename(input_path)} -> {os.path.basename(output_path)}")
-    result = run_pipeline(pipeline_dict, stream, tile, jobs=jobs)
+    result = run_inputs(input_path, output_path, opt, stream=stream, tile=tile, jobs=jobs,
+                        e57_reader=e57_reader)
     
     if result["success"]:
         if result.get("note"):
@@ -541,6 +545,7 @@ def process_file_worker(
         dry_run: bool,
         stream: StreamParams = None,
         tile: TileParams = None,
+        e57_reader: str = "auto",
 ) -> Tuple[int, str]:
     """並列処理のための独立したワーカー関数"""
     out_name = os.path.basename(f_path)
@@ -551,7 +556,8 @@ def process_file_worker(
     t_path = os.path.join(session_dir, out_name)
     try:
         # process_single_file は外側でも呼べます
-        pts_count = process_single_file(f_path, t_path, filter_params, dry_run, stream, tile)
+        pts_count = process_single_file(f_path, t_path, filter_params, dry_run, stream, tile,
+                                        e57_reader=e57_reader)
         if pts_count >= 0:
             save_report(session_dir, out_name, filter_params, pts_count)
         return pts_count, out_name
@@ -567,6 +573,15 @@ def main():
         filter_params = assemble_config(args)
         stream_params = stream_params_from_args(args)
         tile_params = tile_params_from_args(args)
+
+        if args.e57_info:
+            from gq_filter.e57 import describe_scans, read_scans
+            from gq_filter.parallel import collect_inputs
+
+            for path in collect_inputs([args.input]):
+                if path.lower().endswith(".e57"):
+                    print(describe_scans(path, read_scans(path)))
+            return
 
         # Determine input files
         if os.path.isdir(args.input):
@@ -603,7 +618,7 @@ def main():
                 # 独立したワーカー関数に、必要な変数をすべて渡して予約する
                 futures = {
                     executor.submit(process_file_worker, f, session_dir, filter_params, args.dry_run,
-                                    stream_params, tile_params): f
+                                    stream_params, tile_params, args.e57_reader): f
                     for f in input_files
                 }
                 
@@ -636,7 +651,9 @@ def main():
                 print(streamability_report(pipeline_dict))
             else:
                 print(f"Merging {len(input_files)} files into {output_path}...")
-                result = run_pipeline(pipeline_dict, stream_params, tile_params, jobs=resolve_jobs(args.jobs))
+                result = run_inputs(input_files, output_path, filter_params, stream=stream_params,
+                                    tile=tile_params, jobs=resolve_jobs(args.jobs),
+                                    e57_reader=args.e57_reader)
                 if result["success"]:
                     if result.get("note"):
                         print(f"[INFO] {result['note']}")
@@ -649,7 +666,7 @@ def main():
             # Single file mode
             check_not_overwriting(args.input, args.output)
             pts = process_single_file(args.input, args.output, filter_params, args.dry_run,
-                                      stream_params, tile_params, resolve_jobs(args.jobs))
+                                      stream_params, tile_params, resolve_jobs(args.jobs), args.e57_reader)
             if pts >= 0 and not args.dry_run:
                 print(f"Success! Points processed: {pts}")
                 out_dir = os.path.dirname(args.output) or "."

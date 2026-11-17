@@ -1,6 +1,7 @@
 import json
 import os
 import platform
+import warnings
 import subprocess
 import math
 from datetime import datetime
@@ -228,31 +229,57 @@ class FilterOptions:
 
 def get_origin_auto(path: str) -> Optional[Tuple[float, float, float]]:
     """
-    pye57 を使用して、E57ファイルのヘッダーから直接器械点を抽出する（Cyclone対応版）
+    pye57 を使用して、E57ファイルのヘッダーから器械点（スキャンの pose の並進）を取得する。
+
+    全スキャンの器械点が同じならその点を返す。スキャンごとに違うときは先頭スキャンの点を
+    返し、警告を出す（スキャンごとの器械点で絞るには gq_filter.runner.run_inputs を使う）。
+    pye57 がないときや E57 でないときは None。
     """
     if not path.lower().endswith(".e57"):
         return None
 
+    from gq_filter.e57 import Pye57Missing, read_scans, shared_origin
+
     try:
-        import pye57  # lazy import — only needed for E57 files
-        e57 = pye57.E57(path)
-        
-        # 引用いただいたコードの通り、0番目のスキャンのヘッダーを取得
-        header = e57.get_header(0)
-        
-        # 器械点（スキャン中心座標）の取得
-        if hasattr(header, 'translation'):
-            pos = header.translation
-            tx, ty, tz = float(pos[0]), float(pos[1]), float(pos[2])
-            print(f"[INFO] {os.path.basename(path)} の器械点座標を取得しました: X={tx:.3f}, Y={ty:.3f}, Z={tz:.3f}")
-            return (tx, ty, tz)
-        else:
-            print(f"[WARNING] ヘッダーに translation 情報が見つかりません: {path}")
-            return None
-            
+        scans = read_scans(path)
+    except Pye57Missing:
+        warnings.warn(
+            f"pye57 がないため {os.path.basename(path)} の器械点を取得できません。"
+            "器械点は (0, 0, 0) になります（pip install pye57）",
+            stacklevel=2,
+        )
+        return None
     except Exception as e:
         print(f"[ERROR] pye57での器械点取得に失敗しました: {e}")
         return None
+    if not scans:
+        return None
+
+    origin = shared_origin(scans)
+    if origin is None:
+        origin = scans[0].origin
+        warnings.warn(
+            f"{os.path.basename(path)} には器械点の違うスキャンが {len(scans)} 個あります。"
+            "ここでは先頭スキャンの器械点だけを使います。スキャンごとの器械点で絞るには "
+            "gq_filter.runner.run_inputs（CLI は既定でこちら）を使ってください。",
+            stacklevel=2,
+        )
+    tx, ty, tz = origin
+    print(f"[INFO] {os.path.basename(path)} の器械点座標を取得しました: X={tx:.3f}, Y={ty:.3f}, Z={tz:.3f}")
+    return origin
+
+
+def build_e57_invalid_filter(input_paths: List[str]) -> Optional[Dict[str, Any]]:
+    """E57 の無効点（readers.e57 が Omit=1 を付けて残す点）を除くステージ。
+
+    構造化スキャンの欠測した格子点は、PDAL では器械点の位置（局所座標 0,0,0）の点として
+    読まれる。無効点のフィールドがある E57 を読むときだけ足す。
+    """
+    from gq_filter.e57 import has_invalid_points
+
+    if any(p.lower().endswith(".e57") and has_invalid_points(p) for p in input_paths):
+        return {"type": FilterType.EXPRESSION, "expression": "Omit == 0"}
+    return None
 
 
 def save_report(output_dir: str, filename: str, opt: FilterOptions, points: int):
@@ -656,6 +683,10 @@ def build_pipeline(
     
     if merge or len(input_paths) > 1:
         stages.append({"type": FilterType.MERGE})
+
+    # 0. E57 の無効点（構造化スキャンの欠測）を除く
+    f_invalid = build_e57_invalid_filter(input_paths)
+    if f_invalid: stages.append(f_invalid)
 
     # Ordered list of filters
     # 1. Range (based on scanner origin)

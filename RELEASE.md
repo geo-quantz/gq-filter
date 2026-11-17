@@ -10,6 +10,9 @@
 - [x] 並列処理: `--jobs N`（既定は CPU コア数）。複数ファイルはファイル単位、`--tile` はタイル単位でプロセス並列。`cli.py` は `-i` に複数ファイル・ディレクトリを受け付ける。`main.py` の `--max-workers` は `--jobs` の旧名（既定を CPU コア数 - 1 から CPU コア数に変更）
 - [ ] リリース前に配布ビルド（PyInstaller）で複数ファイル `--jobs 2` と `--tile --jobs 2` を動かして確認する（spawn のワーカー起動に `freeze_support()` が要る）
 - [x] ライブラリ API: `gq_filter.parallel`（`run_files`, `batch_outputs`, `collect_inputs`, `process_map`）、`run_pipeline(..., jobs=N)`
+- [x] E57 の読み込み: 構造化・非構造化・球座標・複数スキャン。スキャンごとの器械点からの距離・入射角（pye57、`--e57-reader {auto,pdal,pye57}`、`--e57-info`）。PDAL の readers.e57 で読むときも構造化スキャンの無効点（`Omit`）を除く
+- [x] ライブラリ API: `gq_filter.e57`（`read_scans`, `iter_scan_points`, `expand_e57`, `E57Scan`）、`gq_filter.runner.run_inputs`。`get_origin_auto` は器械点の違うスキャンがあると警告を出す
+- [x] 任意の依存 `gq-filter[e57]`（pye57）
 - [x] LAS/LAZ 出力の offset を入力の座標の格子に合わせる（`run_pipeline` 経由。`offset: auto` による最大 0.5 mm のずれをなくす）
 - [ ] 簡易 GUI の作成（入出力ファイル指定のみの製品化向け GUI）
 

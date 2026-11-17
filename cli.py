@@ -7,11 +7,12 @@ from typing import List
 from gq_filter.classify import add_ground_args, ground_params_from_args
 from gq_filter.stream import (
     add_stream_args,
-    run_pipeline,
     stream_params_from_args,
     streamability_report,
 )
 from gq_filter.tiling import add_tile_args, tile_params_from_args
+from gq_filter.e57 import add_e57_args, describe_scans, is_e57, read_scans
+from gq_filter.runner import plan_e57, run_inputs
 from gq_filter.parallel import (
     INPUT_EXTENSIONS,
     add_jobs_arg,
@@ -53,8 +54,8 @@ def parse_args(args: List[str]) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--output", "-o", required=True,
-        help="Output file, or the output directory when several inputs are given.",
+        "--output", "-o",
+        help="Output file, or the output directory when several inputs are given (required unless --e57-info).",
     )
     parser.add_argument(
         "--dry-run",
@@ -100,6 +101,7 @@ def parse_args(args: List[str]) -> argparse.Namespace:
     add_stream_args(parser)
     add_tile_args(parser)
     add_jobs_arg(parser)
+    add_e57_args(parser)
     # Radius-based Thinning Group
     sample_group = parser.add_argument_group("Radius-based Thinning")
     sample_group.add_argument(
@@ -309,31 +311,48 @@ def report_failure(result: dict) -> None:
         print(f"Log: {result['log']}", file=sys.stderr)
 
 
-def run_single(input_path, output_path, filter_params, stream_params, tile_params, jobs, dry_run) -> None:
+def print_e57_plan(input_path, filter_params, e57_reader) -> None:
+    """--dry-run: whether an E57 input is read scan by scan with pye57."""
+    if not is_e57(input_path):
+        return
+    use, reasons = plan_e57(input_path, filter_params, e57_reader)
+    if use:
+        print(f"E57: pye57 でスキャンごとに読み込みます（{'、'.join(reasons)}）")
+    else:
+        print("E57: PDAL の readers.e57 で読み込みます")
+
+
+def run_single(input_path, output_path, filter_params, stream_params, tile_params, jobs, dry_run,
+               e57_reader="auto") -> None:
     """One input file -> one output file (tiles run in parallel with --jobs)."""
     check_not_overwriting(input_path, output_path)
-    pipeline_dict = build_pipeline(input_path, output_path, filter_params)
 
     if dry_run:
+        pipeline_dict = build_pipeline(input_path, output_path, filter_params)
         print("--- DRY RUN: Generated PDAL Pipeline ---")
         print(json.dumps(pipeline_dict, indent=4))
         print(streamability_report(pipeline_dict))
+        print_e57_plan(input_path, filter_params, e57_reader)
         return
 
     print(f"Executing pipeline: {input_path} -> {output_path}")
-    result = run_pipeline(pipeline_dict, stream_params, tile_params, jobs=jobs)
+    result = run_inputs(input_path, output_path, filter_params, stream=stream_params, tile=tile_params,
+                        jobs=jobs, e57_reader=e57_reader)
 
     if not result["success"]:
         report_failure(result)
         sys.exit(1)
     print("Pipeline execution completed successfully.")
     print(describe_mode(result))
+    if "e57" in result:
+        print(f"E57: pye57 でスキャンごとに処理しました（{result['e57']['scans']} スキャン）")
     print(f"Points processed: {result['points_processed']}")
     if "note" in result:
         print(f"Note: {result['note']}")
 
 
-def run_batch(inputs, output_dir, filter_params, stream_params, tile_params, jobs, dry_run) -> None:
+def run_batch(inputs, output_dir, filter_params, stream_params, tile_params, jobs, dry_run,
+              e57_reader="auto") -> None:
     """Several inputs -> one output per input in output_dir, files in parallel."""
     if os.path.isfile(output_dir) or output_dir.lower().endswith(INPUT_EXTENSIONS):
         raise ValueError(f"-o must be a directory when several inputs are given (got {output_dir})")
@@ -347,11 +366,13 @@ def run_batch(inputs, output_dir, filter_params, stream_params, tile_params, job
             print(f"--- DRY RUN: Pipeline for {job.input} ---")
             print(json.dumps(pipeline_dict, indent=4))
             print(streamability_report(pipeline_dict))
+            print_e57_plan(job.input, filter_params, e57_reader)
         return
 
     n = min(jobs, len(file_jobs))
     print(f"Processing {len(file_jobs)} files with {n} 並列 (--jobs) -> {output_dir}")
-    results = run_files(file_jobs, filter_params, stream=stream_params, tile=tile_params, jobs=jobs)
+    results = run_files(file_jobs, filter_params, stream=stream_params, tile=tile_params, jobs=jobs,
+                        e57_reader=e57_reader)
     failed = [r for r in results if not r["success"]]
     for r in results:
         if r["success"]:
@@ -375,12 +396,22 @@ def main():
         stream_params = stream_params_from_args(args)
         tile_params = tile_params_from_args(args)
 
+        if args.e57_info:
+            for path in collect_inputs(args.input):
+                if is_e57(path):
+                    print(describe_scans(path, read_scans(path)))
+            return
+
+        if not args.output:
+            raise ValueError("--output / -o is required")
         jobs = resolve_jobs(args.jobs)
         single = len(args.input) == 1 and not os.path.isdir(args.input[0])
         if single:
-            run_single(args.input[0], args.output, filter_params, stream_params, tile_params, jobs, args.dry_run)
+            run_single(args.input[0], args.output, filter_params, stream_params, tile_params, jobs,
+                       args.dry_run, args.e57_reader)
         else:
-            run_batch(args.input, args.output, filter_params, stream_params, tile_params, jobs, args.dry_run)
+            run_batch(args.input, args.output, filter_params, stream_params, tile_params, jobs,
+                      args.dry_run, args.e57_reader)
 
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
