@@ -44,32 +44,52 @@ def process_map(
         items: Sequence[T],
         jobs: Optional[int] = None,
         stop: Optional[Callable[[R], bool]] = None,
+        on_error: Optional[Callable[[T, BaseException], R]] = None,
 ) -> List[R]:
     """``fn`` を items に別プロセスで並列に適用し、items の順に結果を返す。
 
     ``fn`` と items は pickle できる必要がある（モジュールの最上位で定義した関数）。
     jobs=1 か items が 1 つなら、このプロセスでそのまま実行する。
-    ``stop(result)`` が真になったら、まだ始まっていない items は実行しない（返り値は
-    終わった分だけ、items の順）。
+
+    - ``stop(result)`` が真になったら、まだ始まっていない items は実行しない（返り値は
+      終わった分だけ、items の順）。
+    - ``on_error(item, exc)`` を渡すと、ワーカーの例外やプロセスの異常終了（メモリ不足で
+      落ちたときなど）をその返り値に置き換える。渡さなければ例外をそのまま送出する。
     """
     n = min(resolve_jobs(jobs), len(items))
     if n <= 1:
         results: List[R] = []
         for item in items:
-            results.append(fn(item))
+            try:
+                results.append(fn(item))
+            except Exception as exc:  # on_error が結果に変える
+                if on_error is None:
+                    raise
+                results.append(on_error(item, exc))
             if stop is not None and stop(results[-1]):
                 break
         return results
+
     context = multiprocessing.get_context("spawn")
-    with ProcessPoolExecutor(max_workers=n, mp_context=context) as pool:
-        futures = [pool.submit(fn, item) for item in items]
-        if stop is not None:
-            for future in as_completed(futures):
-                if stop(future.result()):
-                    for other in futures:
-                        other.cancel()
-                    break
-        return [f.result() for f in futures if not f.cancelled()]
+    pool = ProcessPoolExecutor(max_workers=n, mp_context=context)
+    futures = {}
+    try:
+        futures = {pool.submit(fn, item): i for i, item in enumerate(items)}
+        done: Dict[int, R] = {}
+        for future in as_completed(futures):
+            index = futures[future]
+            try:
+                done[index] = future.result()
+            except Exception as exc:  # BrokenProcessPool も含む
+                if on_error is None:
+                    raise
+                done[index] = on_error(items[index], exc)
+            if stop is not None and stop(done[index]):
+                break
+    finally:
+        # 止めるとき・例外のときは、まだ始まっていない items を実行しない
+        pool.shutdown(wait=True, cancel_futures=True)
+    return [done[i] for i in sorted(done)]
 
 
 def stop_on_failure(result: Dict[str, Any]) -> bool:
@@ -107,6 +127,12 @@ def collect_inputs(paths: Iterable[str]) -> List[str]:
     return list(unique.values())
 
 
+def check_not_overwriting(input_path: str, output_path: str) -> None:
+    """出力が入力と同じファイルなら ValueError（入力を読みながら上書きして壊さないため）。"""
+    if os.path.realpath(input_path) == os.path.realpath(output_path):
+        raise ValueError(f"the output would overwrite the input: {input_path}")
+
+
 def batch_outputs(inputs: Sequence[str], output_dir: str, ext: str = ".las") -> List[FileJob]:
     """入力ごとの出力先（output_dir/<入力名>。E57 は ext に変える）。同名の出力は拒否する。"""
     jobs: List[FileJob] = []
@@ -117,7 +143,9 @@ def batch_outputs(inputs: Sequence[str], output_dir: str, ext: str = ".las") -> 
         if out_name in seen:
             raise ValueError(f"two inputs would write the same output {out_name}: {seen[out_name]}, {path}")
         seen[out_name] = path
-        jobs.append(FileJob(path, os.path.join(output_dir, out_name)))
+        out_path = os.path.join(output_dir, out_name)
+        check_not_overwriting(path, out_path)
+        jobs.append(FileJob(path, out_path))
     return jobs
 
 
@@ -127,6 +155,7 @@ class _FileTask:
     options: FilterOptions
     stream: Optional[StreamParams]
     tile: Optional[Any]
+    tile_jobs: int = 1
 
 
 def _run_file(task: _FileTask) -> Dict[str, Any]:
@@ -135,11 +164,21 @@ def _run_file(task: _FileTask) -> Dict[str, Any]:
         out_dir = os.path.dirname(os.path.abspath(task.job.output))
         os.makedirs(out_dir, exist_ok=True)
         pipeline = build_pipeline(task.job.input, task.job.output, task.options)
-        result = run_pipeline(pipeline, task.stream, task.tile)
+        result = run_pipeline(pipeline, task.stream, task.tile, jobs=task.tile_jobs)
     except Exception as exc:  # 1 ファイルの失敗で他のファイルを止めない
         result = {"success": False, "error": str(exc), "log": ""}
     result.pop("metadata", None)  # プロセス間で大きな dict を送らない
     return {**result, "input": task.job.input, "output": task.job.output}
+
+
+def _crashed(task: _FileTask, exc: BaseException) -> Dict[str, Any]:
+    return {
+        "success": False,
+        "error": f"処理中のプロセスが異常終了しました（メモリ不足の可能性。--jobs を減らしてください）: {exc!r}",
+        "log": "",
+        "input": task.job.input,
+        "output": task.job.output,
+    }
 
 
 def run_files(
@@ -153,10 +192,14 @@ def run_files(
     """複数のファイルをそれぞれ処理する（ファイル単位で並列）。結果は jobs_list の順。
 
     各結果は run_pipeline の結果に ``input`` / ``output`` を足したもの。1 つが失敗しても
-    残りは処理する。ファイルを並列にするときタイルは各プロセスの中で順に処理する。
+    （プロセスが落ちても）残りは処理する。``tile`` を使うとき、ファイル数が ``jobs`` より
+    少なければ余ったプロセスを各ファイルのタイルに回す（合計がおおむね ``jobs`` になる）。
     """
-    tasks = [_FileTask(job, options, stream, tile) for job in jobs_list]
-    return process_map(_run_file, tasks, jobs)
+    n = resolve_jobs(jobs)
+    file_procs = max(1, min(n, len(jobs_list)))
+    tile_jobs = max(1, n // file_procs) if tile is not None else 1
+    tasks = [_FileTask(job, options, stream, tile, tile_jobs) for job in jobs_list]
+    return process_map(_run_file, tasks, file_procs, on_error=_crashed)
 
 
 # -------------------------------

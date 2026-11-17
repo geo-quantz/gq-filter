@@ -12,7 +12,15 @@ from gq_filter.stream import (
     streamability_report,
 )
 from gq_filter.tiling import add_tile_args, tile_params_from_args
-from gq_filter.parallel import add_jobs_arg, batch_outputs, collect_inputs, resolve_jobs, run_files
+from gq_filter.parallel import (
+    INPUT_EXTENSIONS,
+    add_jobs_arg,
+    batch_outputs,
+    check_not_overwriting,
+    collect_inputs,
+    resolve_jobs,
+    run_files,
+)
 from gq_filter.filter import (
     DuplicateParams,
     FilterOptions,
@@ -303,6 +311,7 @@ def report_failure(result: dict) -> None:
 
 def run_single(input_path, output_path, filter_params, stream_params, tile_params, jobs, dry_run) -> None:
     """One input file -> one output file (tiles run in parallel with --jobs)."""
+    check_not_overwriting(input_path, output_path)
     pipeline_dict = build_pipeline(input_path, output_path, filter_params)
 
     if dry_run:
@@ -326,6 +335,8 @@ def run_single(input_path, output_path, filter_params, stream_params, tile_param
 
 def run_batch(inputs, output_dir, filter_params, stream_params, tile_params, jobs, dry_run) -> None:
     """Several inputs -> one output per input in output_dir, files in parallel."""
+    if os.path.isfile(output_dir) or output_dir.lower().endswith(INPUT_EXTENSIONS):
+        raise ValueError(f"-o must be a directory when several inputs are given (got {output_dir})")
     file_jobs = batch_outputs(collect_inputs(inputs), output_dir)
     if not file_jobs:
         raise ValueError(f"no .las / .laz / .e57 files found in {', '.join(inputs)}")
@@ -340,7 +351,7 @@ def run_batch(inputs, output_dir, filter_params, stream_params, tile_params, job
 
     n = min(jobs, len(file_jobs))
     print(f"Processing {len(file_jobs)} files with {n} 並列 (--jobs) -> {output_dir}")
-    results = run_files(file_jobs, filter_params, stream=stream_params, tile=tile_params, jobs=n)
+    results = run_files(file_jobs, filter_params, stream=stream_params, tile=tile_params, jobs=jobs)
     failed = [r for r in results if not r["success"]]
     for r in results:
         if r["success"]:

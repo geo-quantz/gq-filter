@@ -16,7 +16,7 @@ from gq_filter.stream import (
     streamability_report,
 )
 from gq_filter.tiling import TileParams, add_tile_args, tile_params_from_args
-from gq_filter.parallel import add_jobs_arg, resolve_jobs
+from gq_filter.parallel import add_jobs_arg, check_not_overwriting, resolve_jobs
 from gq_filter.filter import (
     DuplicateParams,
     FilterOptions,
@@ -647,6 +647,7 @@ def main():
                     sys.exit(1)
         else:
             # Single file mode
+            check_not_overwriting(args.input, args.output)
             pts = process_single_file(args.input, args.output, filter_params, args.dry_run,
                                       stream_params, tile_params, resolve_jobs(args.jobs))
             if pts >= 0 and not args.dry_run:

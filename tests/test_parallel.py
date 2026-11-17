@@ -157,3 +157,36 @@ def test_process_map_stops_scheduling_after_failure():
     assert [r["x"] for r in results] == sorted(r["x"] for r in results)
     serial = process_map(_fail_on_three, list(range(40)), jobs=1, stop=stop_on_failure)
     assert [r["x"] for r in serial] == [0, 1, 2, 3]
+
+
+def _die_on_two(x: int) -> dict:
+    if x == 2:
+        os._exit(3)  # メモリ不足で落ちたワーカーの代わり
+    return {"success": True, "x": x}
+
+
+def _as_failure(x: int, exc: BaseException) -> dict:
+    return {"success": False, "x": x, "error": repr(exc)}
+
+
+def test_process_map_turns_crashed_worker_into_failure():
+    results = process_map(_die_on_two, [0, 1, 2, 3], jobs=2, on_error=_as_failure)
+    by_x = {r["x"]: r for r in results}
+    assert by_x[2]["success"] is False
+    assert len(results) == 4
+
+
+def test_batch_outputs_refuses_to_overwrite_inputs(tmp_path):
+    src = tmp_path / "a.las"
+    src.write_bytes(b"")
+    with pytest.raises(ValueError, match="overwrite"):
+        batch_outputs([str(src)], str(tmp_path))
+
+
+def test_cli_batch_rejects_file_like_output(clouds, tmp_path):
+    r = subprocess.run(
+        [sys.executable, str(ROOT / "cli.py"), "-i", str(clouds[0]), str(clouds[1]), "-o", str(tmp_path / "m.las")],
+        cwd=ROOT, capture_output=True, text=True, timeout=60,
+    )
+    assert r.returncode == 1
+    assert "directory" in r.stderr
