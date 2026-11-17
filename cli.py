@@ -4,6 +4,13 @@ import sys
 from typing import List
 
 from gq_filter.classify import add_ground_args, ground_params_from_args
+from gq_filter.stream import (
+    add_stream_args,
+    run_pipeline,
+    stream_params_from_args,
+    streamability_report,
+)
+from gq_filter.tiling import add_tile_args, tile_params_from_args
 from gq_filter.filter import (
     DuplicateParams,
     FilterOptions,
@@ -18,7 +25,6 @@ from gq_filter.filter import (
     RadiusOutlierParams,
     StatisticalOutlierParams,
     build_pipeline,
-    execute_pipeline,
 )
 
 
@@ -76,6 +82,8 @@ def parse_args(args: List[str]) -> argparse.Namespace:
     )
 
     add_ground_args(parser)
+    add_stream_args(parser)
+    add_tile_args(parser)
     # Radius-based Thinning Group
     sample_group = parser.add_argument_group("Radius-based Thinning")
     sample_group.add_argument(
@@ -269,6 +277,16 @@ def _make_console_output_safe() -> None:
             stream.reconfigure(errors="replace")
 
 
+def describe_mode(result: dict) -> str:
+    """Execution mode line printed after a run."""
+    mode = result.get("mode")
+    if mode == "stream":
+        return "Mode: ストリーム読込（大容量ファイルモード）"
+    if mode == "tile":
+        return f"Mode: タイル分割（{result.get('tiles', 0)} タイル）"
+    return "Mode: 通常（全点をメモリに読み込み）"
+
+
 def main():
     """Main entry point for the CLI tool."""
     _make_console_output_safe()
@@ -276,20 +294,24 @@ def main():
         args = parse_args(sys.argv[1:])
         filter_params = assemble_config(args)
 
+        stream_params = stream_params_from_args(args)
+        tile_params = tile_params_from_args(args)
+
         # Build the pipeline dictionary using the existing builder logic
         pipeline_dict = build_pipeline(args.input, args.output, filter_params)
 
         if args.dry_run:
             print("--- DRY RUN: Generated PDAL Pipeline ---")
             print(json.dumps(pipeline_dict, indent=4))
+            print(streamability_report(pipeline_dict))
             return
 
-        # Execute the pipeline using the existing executor logic
         print(f"Executing pipeline: {args.input} -> {args.output}")
-        result = execute_pipeline(pipeline_dict)
+        result = run_pipeline(pipeline_dict, stream_params, tile_params)
 
         if result["success"]:
             print("Pipeline execution completed successfully.")
+            print(describe_mode(result))
             print(f"Points processed: {result['points_processed']}")
             if "note" in result:
                 print(f"Note: {result['note']}")

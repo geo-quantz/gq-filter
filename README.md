@@ -197,6 +197,65 @@ make harness                                   # ground_* シナリオを含む�
 uv run python tools/evaluate_ground_classify.py   # 上表の適合率・再現率
 ```
 
+## 大容量ファイルモード（ストリーム読込・タイル分割）
+
+通常の実行は全点をメモリに読み込んでから処理するため、大きなファイルではメモリが足りなくなります。
+大容量ファイルモードでは、点を少しずつ読み込みながら処理します（`cli.py` / `main.py` 共通）。
+
+| オプション | 既定値 | 説明 |
+| :--- | :--- | :--- |
+| `--stream {off,on,auto}` | `auto` | `on`: 必ずストリーム読込（できないフィルターがあればエラー）。`auto`: 入力の合計が `--stream-threshold-mb` 以上で、すべてのフィルターがストリーム対応ならストリーム読込 |
+| `--chunk-size N` | 1,000,000 | ストリーム読込で一度に読む点数 |
+| `--stream-threshold-mb MB` | 1024 | `auto` でストリームに切り替える入力サイズ |
+| `--tile SIZE` | - | XY を一辺 SIZE（座標単位）のタイルに分けて処理する。ストリーム非対応のフィルターも使える |
+| `--tile-buffer B` | max(フィルターの近傍, SIZE×0.1) | 各タイルの周囲に読み込む重なりの幅。重なりの点は近傍としてだけ使い、出力には含めない |
+| `--work-dir DIR` | 出力と同じ場所 | タイルの一時ファイルを置く場所 |
+
+### ストリーム対応のフィルター
+
+PDAL 2.10 で確認（`tests/test_stream.py` で PDAL の判定と突き合わせています）。
+
+| ストリーム対応 | ストリーム非対応（`--tile` で処理） |
+| :--- | :--- |
+| 距離（`--range-*`）、Z（`--z-*`）、空間クリップ（`--clip-*`）、リターン番号、分類コード、強度、色クリーニング、ポアソン間引き（`--sample-radius`） | 入射角（`filters.normal`）、外れ値除去（`filters.outlier`）、地表分類（`filters.smrf` / `pmf` / `csf`）、ボクセル（`filters.voxelcentroidnearestneighbor`）、重複除去（`filters.label_duplicates`）、COPC 出力（`writers.copc`） |
+
+ストリーム非対応のフィルターがあるときは、`--stream on` はどのフィルターが原因かを示して止まり、`--stream auto` は理由を表示して通常の実行に戻ります。`--dry-run` でもストリーム読込できるかを表示します。
+
+### タイル分割
+
+`--tile` を付けると次の順で処理します。メモリ使用量は 1 タイル分（重なりを含む）で決まり、入力全体の大きさに依りません。
+
+1. 入力をストリームで読み、タイルごとの一時ファイルに振り分ける（先頭のストリーム対応フィルターはここで全点にかける）
+2. タイルごとに残りのフィルターを実行し、タイル本体の点だけを残す
+3. タイルの結果をストリームで 1 つの出力にまとめる
+
+半径外れ値除去・重複除去は、重なりが近傍の半径以上あればタイルなしと同じ結果になります（テストで確認）。次のものはタイルなしの結果と変わることがあります。
+
+- 統計的外れ値除去: 閾値が全点の平均・標準偏差で決まるため、タイルごとの統計になる
+- 地表分類: 窓・布の範囲がタイル＋重なりに限られる。重なりを窓サイズ以上にする
+- ボクセル間引き: 格子の原点がタイルごとに決まる
+
+```bash
+# 30M 点の LAS を Z で絞る（ストリーム）
+python cli.py -i big.las -o out.las --z-min 1 --stream on
+# 外れ値除去を 250m タイルで
+python cli.py -i big.las -o out.las --outlier-radius --outlier-radius-value 0.5 --tile 250
+```
+
+LAS/LAZ を出力するときは、`offset` を入力の座標の格子に合わせます。入力の scale が 0.001 の倍数なら、書き出した座標は入力と同じです（`offset: auto` のままだと最大 0.5 mm ずれていました）。
+
+ライブラリからは次のように使います。
+
+```python
+from gq_filter.filter import FilterOptions, build_pipeline
+from gq_filter.stream import StreamParams, run_pipeline
+from gq_filter.tiling import TileParams
+
+pipeline = build_pipeline("in.las", "out.las", FilterOptions(...))
+result = run_pipeline(pipeline, StreamParams(mode="auto"))          # ストリーム
+result = run_pipeline(pipeline, StreamParams(), TileParams(size=250))  # タイル分割
+```
+
 ## 開発とテスト
 ```powershell
 pytest tests/test_filter.py

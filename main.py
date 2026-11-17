@@ -8,6 +8,14 @@ from typing import List, Dict, Any, Tuple
 import concurrent.futures
 
 from gq_filter.classify import add_ground_args, ground_params_from_args
+from gq_filter.stream import (
+    StreamParams,
+    add_stream_args,
+    run_pipeline,
+    stream_params_from_args,
+    streamability_report,
+)
+from gq_filter.tiling import TileParams, add_tile_args, tile_params_from_args
 from gq_filter.filter import (
     DuplicateParams,
     FilterOptions,
@@ -24,7 +32,6 @@ from gq_filter.filter import (
     RadiusOutlierParams,
     StatisticalOutlierParams,
     build_pipeline,
-    execute_pipeline,
     save_report,
 )
 
@@ -370,6 +377,8 @@ def parse_args(args: List[str]) -> argparse.Namespace:
     )
 
     add_ground_args(parser)
+    add_stream_args(parser)
+    add_tile_args(parser)
 
     return parser.parse_args(args)
 
@@ -502,25 +511,42 @@ def assemble_config(args: argparse.Namespace) -> FilterOptions:
     )
 
 
-def process_single_file(input_path: str, output_path: str, opt: FilterOptions, dry_run: bool) -> int:
+def process_single_file(
+        input_path: str,
+        output_path: str,
+        opt: FilterOptions,
+        dry_run: bool,
+        stream: StreamParams = None,
+        tile: TileParams = None,
+) -> int:
     """Build and execute pipeline for a single file."""
     pipeline_dict = build_pipeline(input_path, output_path, opt)
 
     if dry_run:
         print(f"--- DRY RUN: Pipeline for {input_path} ---")
         print(json.dumps(pipeline_dict, indent=4))
+        print(streamability_report(pipeline_dict))
         return 0
 
     print(f"Processing: {os.path.basename(input_path)} -> {os.path.basename(output_path)}")
-    result = execute_pipeline(pipeline_dict)
+    result = run_pipeline(pipeline_dict, stream, tile)
     
     if result["success"]:
+        if result.get("note"):
+            print(f"[INFO] {result['note']}")
         return result["points_processed"]
     else:
         print(f"Failed: {result['error']}", file=sys.stderr)
         return -1
 
-def process_file_worker(f_path: str, session_dir: str, filter_params: FilterOptions, dry_run: bool) -> Tuple[int, str]:
+def process_file_worker(
+        f_path: str,
+        session_dir: str,
+        filter_params: FilterOptions,
+        dry_run: bool,
+        stream: StreamParams = None,
+        tile: TileParams = None,
+) -> Tuple[int, str]:
     """並列処理のための独立したワーカー関数"""
     out_name = os.path.basename(f_path)
     base, ext = os.path.splitext(out_name)
@@ -530,7 +556,7 @@ def process_file_worker(f_path: str, session_dir: str, filter_params: FilterOpti
     t_path = os.path.join(session_dir, out_name)
     try:
         # process_single_file は外側でも呼べます
-        pts_count = process_single_file(f_path, t_path, filter_params, dry_run)
+        pts_count = process_single_file(f_path, t_path, filter_params, dry_run, stream, tile)
         if pts_count >= 0:
             save_report(session_dir, out_name, filter_params, pts_count)
         return pts_count, out_name
@@ -544,6 +570,8 @@ def main():
     try:
         args = parse_args(sys.argv[1:])
         filter_params = assemble_config(args)
+        stream_params = stream_params_from_args(args)
+        tile_params = tile_params_from_args(args)
 
         # Determine input files
         if os.path.isdir(args.input):
@@ -583,7 +611,8 @@ def main():
             with concurrent.futures.ProcessPoolExecutor(max_workers=safe_workers) as executor:
                 # 独立したワーカー関数に、必要な変数をすべて渡して予約する
                 futures = {
-                    executor.submit(process_file_worker, f, session_dir, filter_params, args.dry_run): f 
+                    executor.submit(process_file_worker, f, session_dir, filter_params, args.dry_run,
+                                    stream_params, tile_params): f
                     for f in input_files
                 }
                 
@@ -613,10 +642,13 @@ def main():
             if args.dry_run:
                 print("--- DRY RUN: Merge Pipeline ---")
                 print(json.dumps(pipeline_dict, indent=4))
+                print(streamability_report(pipeline_dict))
             else:
                 print(f"Merging {len(input_files)} files into {output_path}...")
-                result = execute_pipeline(pipeline_dict)
+                result = run_pipeline(pipeline_dict, stream_params, tile_params)
                 if result["success"]:
+                    if result.get("note"):
+                        print(f"[INFO] {result['note']}")
                     print(f"Success! Points merged: {result['points_processed']}")
                     save_report(session_dir, os.path.basename(output_path), filter_params, result["points_processed"])
                 else:
@@ -624,7 +656,8 @@ def main():
                     sys.exit(1)
         else:
             # Single file mode
-            pts = process_single_file(args.input, args.output, filter_params, args.dry_run)
+            pts = process_single_file(args.input, args.output, filter_params, args.dry_run,
+                                      stream_params, tile_params)
             if pts >= 0 and not args.dry_run:
                 print(f"Success! Points processed: {pts}")
                 out_dir = os.path.dirname(args.output) or "."
