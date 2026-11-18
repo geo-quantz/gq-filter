@@ -56,7 +56,8 @@ describe("App", () => {
     expect(runFilter).toHaveBeenCalledWith({
       cliSetting: null,
       input: "/data/autzen-small.laz",
-      output: "/data/autzen-small_filtered.laz",
+      folder: "/data",
+      format: "laz",
       filterArgs: ["--outlier-statistical", "--outlier-mean-k", "8", "--outlier-multiplier", "2"],
       overwrite: false,
     });

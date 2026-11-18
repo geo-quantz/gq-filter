@@ -82,7 +82,7 @@ impl LocateError {
     pub fn message(&self) -> String {
         match self {
             Self::SettingMissing(p) => format!(
-                "設定した場所に gqfilter がありません: {}。gqfilter の実行ファイルか、それが入ったフォルダを選んでください。",
+                "設定した場所に gqfilter がありません: {}。gqfilter という名前の実行ファイルか、それが入ったフォルダを選んでください。",
                 p.display()
             ),
             Self::EnvMissing(p) => {
@@ -167,13 +167,28 @@ fn is_script(path: &Path) -> bool {
         .is_some_and(|e| e.eq_ignore_ascii_case("bat") || e.eq_ignore_ascii_case("cmd"))
 }
 
+/// Only a file named gqfilter (gqfilter.exe) is started, whatever path is set.
+fn is_gqfilter(path: &Path, windows: bool) -> bool {
+    let name = exe_name(windows);
+    path.file_name().and_then(|n| n.to_str()).is_some_and(|n| {
+        if windows {
+            n.eq_ignore_ascii_case(name)
+        } else {
+            n == name
+        }
+    })
+}
+
 fn explicit(path: &Path, windows: bool, fs: &dyn Fs, source: Source) -> Option<Found> {
     let candidate = if fs.is_dir(path) {
         path.join(exe_name(windows))
     } else {
         path.to_path_buf()
     };
-    if (windows && is_script(&candidate)) || !fs.is_file(&candidate) {
+    if (windows && is_script(&candidate))
+        || !is_gqfilter(&candidate, windows)
+        || !fs.is_file(&candidate)
+    {
         return None;
     }
     Some(Found {
@@ -261,6 +276,27 @@ mod tests {
         let fs = FakeFs::new(&["/usr/bin/gqfilter"], &[]);
         let found = locate(&unix(Some(""), None, Some("/usr/bin")), &fs).unwrap();
         assert_eq!(found.source, Source::Path);
+    }
+
+    #[test]
+    fn only_a_file_named_gqfilter_is_used() {
+        let fs = FakeFs::new(&["/bin/sh", "/opt/g/gqfilter"], &[]);
+        assert_eq!(
+            locate(&unix(Some("/bin/sh"), None, None), &fs),
+            Err(LocateError::SettingMissing(PathBuf::from("/bin/sh")))
+        );
+        let win = LocateInput {
+            windows: true,
+            setting: Some(PathBuf::from("C:/g/GQFILTER.EXE")),
+            ..Default::default()
+        };
+        let fs = FakeFs::new(&["C:/g/GQFILTER.EXE", "C:/g/other.exe"], &[]);
+        assert!(locate(&win, &fs).is_ok());
+        let other = LocateInput {
+            setting: Some(PathBuf::from("C:/g/other.exe")),
+            ..win
+        };
+        assert!(locate(&other, &fs).is_err());
     }
 
     #[test]

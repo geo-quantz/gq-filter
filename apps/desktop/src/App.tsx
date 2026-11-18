@@ -178,7 +178,8 @@ export function App({ api }: { readonly api: Api }) {
       const result = await api.runFilter({
         cliSetting: cliPath.trim() === "" ? null : cliPath,
         input: input.path,
-        output: out.path,
+        folder,
+        format,
         filterArgs: built.args,
         overwrite: out.exists,
       });

@@ -105,7 +105,8 @@ pub fn las_points(header: &[u8], compressed: bool) -> Result<HeaderInfo, CountEr
     let header_size = u16_at(header, 94).ok_or(CountError::Damaged("見出しの大きさ"))? as usize;
     let legacy = u32_at(header, LAS_LEGACY_COUNT_AT).ok_or(CountError::Damaged("点の数"))?;
     let wide = if minor >= 4 && header_size >= LAS_14_HEADER_SIZE {
-        u64_at(header, LAS_COUNT_64_AT).filter(|&n| n > 0)
+        let count = u64_at(header, LAS_COUNT_64_AT).ok_or(CountError::Damaged("点の数"))?;
+        Some(count).filter(|&n| n > 0)
     } else {
         None
     };
@@ -151,7 +152,9 @@ pub fn read_logical<R: Read + Seek>(
     while (out.len() as u64) < length {
         let in_page = pos % page_size;
         if in_page >= payload {
-            pos += page_size - in_page;
+            pos = pos
+                .checked_add(page_size - in_page)
+                .ok_or(CountError::Damaged("XML の場所"))?;
             continue;
         }
         let take = (payload - in_page).min(length - out.len() as u64) as usize;
@@ -161,7 +164,9 @@ pub fn read_logical<R: Read + Seek>(
             return Err(CountError::Damaged("XML が途中で切れています"));
         }
         out.extend_from_slice(&chunk);
-        pos += take as u64;
+        pos = pos
+            .checked_add(take as u64)
+            .ok_or(CountError::Damaged("XML の場所"))?;
     }
     Ok(out)
 }

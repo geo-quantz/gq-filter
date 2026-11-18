@@ -47,8 +47,21 @@ fn find_cli(setting: Option<String>) -> Result<PathBuf, String> {
         .map_err(|e| e.message())
 }
 
+/// Runs file-system work off the main thread (a slow disk must not freeze the window).
+async fn blocking<T: Send + 'static>(
+    work: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    tauri::async_runtime::spawn_blocking(work)
+        .await
+        .map_err(|e| format!("内部の処理が止まりました: {e}"))?
+}
+
 #[tauri::command]
-pub fn cli_status(setting: Option<String>) -> CliStatus {
+pub async fn cli_status(setting: Option<String>) -> Result<CliStatus, String> {
+    blocking(move || Ok(cli_status_now(setting))).await
+}
+
+fn cli_status_now(setting: Option<String>) -> CliStatus {
     let input = LocateInput::from_env(non_empty(setting));
     match locate::locate(&input, &RealFs) {
         Ok(found) => CliStatus {
@@ -72,10 +85,13 @@ pub fn cli_status(setting: Option<String>) -> CliStatus {
 }
 
 #[tauri::command]
-pub fn inspect_input(path: String) -> Result<HeaderInfo, String> {
-    let path = PathBuf::from(path);
-    run_args::check_input(&path)?;
-    point_count::read_header(&path).map_err(|e| e.message())
+pub async fn inspect_input(path: String) -> Result<HeaderInfo, String> {
+    blocking(move || {
+        let path = PathBuf::from(path);
+        run_args::check_input(&path)?;
+        point_count::read_header(&path).map_err(|e| e.message())
+    })
+    .await
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -85,19 +101,28 @@ pub struct PlannedOutput {
     pub exists: bool,
 }
 
+/// The output path is always made here from the input, folder and format;
+/// the window never sends a full output path.
+fn plan_output(input: &Path, folder: &str, format: &str) -> Result<PathBuf, String> {
+    let output = run_args::output_path(input, Path::new(folder), format)?;
+    run_args::check_output(input, &output)?;
+    Ok(output)
+}
+
 #[tauri::command]
-pub fn prepare_output(
+pub async fn prepare_output(
     input: String,
     folder: String,
     format: String,
 ) -> Result<PlannedOutput, String> {
-    let input = PathBuf::from(input);
-    let output = run_args::output_path(&input, Path::new(&folder), &format)?;
-    run_args::check_output(&input, &output)?;
-    Ok(PlannedOutput {
-        exists: output.exists(),
-        path: output.display().to_string(),
+    blocking(move || {
+        let output = plan_output(Path::new(&input), &folder, &format)?;
+        Ok(PlannedOutput {
+            exists: output.exists(),
+            path: output.display().to_string(),
+        })
     })
+    .await
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -105,7 +130,8 @@ pub fn prepare_output(
 pub struct RunRequest {
     pub cli_setting: Option<String>,
     pub input: String,
-    pub output: String,
+    pub folder: String,
+    pub format: String,
     pub filter_args: Vec<String>,
     pub overwrite: bool,
 }
@@ -152,16 +178,28 @@ pub async fn run_filter(
     state: State<'_, RunState>,
     request: RunRequest,
 ) -> Result<RunResult, String> {
-    let input = PathBuf::from(&request.input);
-    let output = PathBuf::from(&request.output);
-    run_args::check_input(&input)?;
-    run_args::check_output(&input, &output)?;
-    run_args::validate_filter_args(&request.filter_args)?;
-    if output.exists() && !request.overwrite {
-        return Err(format!("出力ファイルがもうあります: {}", output.display()));
-    }
-    let cli = find_cli(request.cli_setting.clone())?;
     let (_guard, cancel) = start_guard(&state)?;
+    run_args::validate_filter_args(&request.filter_args)?;
+    let input = PathBuf::from(&request.input);
+    let (output, cli) = {
+        let input = input.clone();
+        let RunRequest {
+            folder,
+            format,
+            overwrite,
+            cli_setting,
+            ..
+        } = request.clone();
+        blocking(move || {
+            run_args::check_input(&input)?;
+            let output = plan_output(&input, &folder, &format)?;
+            if output.exists() && !overwrite {
+                return Err(format!("出力ファイルがもうあります: {}", output.display()));
+            }
+            Ok((output, find_cli(cli_setting)?))
+        })
+        .await?
+    };
 
     let argv = run_args::build_argv(&input, &output, &request.filter_args);
     let on_line: LineSink = Arc::new(move |line: LogLine| {

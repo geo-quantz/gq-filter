@@ -25,7 +25,8 @@ export interface PlannedOutput {
 export interface RunRequest {
   readonly cliSetting: string | null;
   readonly input: string;
-  readonly output: string;
+  readonly folder: string;
+  readonly format: OutputFormat;
   readonly filterArgs: readonly string[];
   readonly overwrite: boolean;
 }
