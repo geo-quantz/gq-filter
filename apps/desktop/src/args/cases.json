@@ -1,0 +1,137 @@
+{
+  "_comment": "Shared by src/args/build.test.ts (form -> argv) and tests/test_desktop_args.py (argv -> cli.py FilterOptions). 'expect' lists the FilterOptions fields that must be set; every other field must be None.",
+  "cases": [
+    {
+      "name": "incidence angle",
+      "form": { "incidence": { "enabled": true, "max": "86" } },
+      "argv": ["--incidence-angle-max", "86"],
+      "expect": { "incidence": { "max_angle": 86.0 } }
+    },
+    {
+      "name": "intensity min and max",
+      "form": { "intensity": { "enabled": true, "min": "100", "max": "4000" } },
+      "argv": ["--intensity-min", "100", "--intensity-max", "4000"],
+      "expect": { "intensity": { "min_intensity": 100.0, "max_intensity": 4000.0 } }
+    },
+    {
+      "name": "intensity min only",
+      "form": { "intensity": { "enabled": true, "min": "100" } },
+      "argv": ["--intensity-min", "100"],
+      "expect": { "intensity": { "min_intensity": 100.0, "max_intensity": null } }
+    },
+    {
+      "name": "range",
+      "form": { "range": { "enabled": true, "min": "0.5", "max": "15" } },
+      "argv": ["--range-min", "0.5", "--range-max", "15"],
+      "expect": { "range_dist": { "min_distance": 0.5, "max_distance": 15.0 } }
+    },
+    {
+      "name": "deduplicate",
+      "form": { "deduplicate": { "enabled": true } },
+      "argv": ["--deduplicate"],
+      "expect": { "duplicate": { "enabled": true } }
+    },
+    {
+      "name": "statistical outlier with CLI defaults",
+      "form": { "statistical": { "enabled": true } },
+      "argv": ["--outlier-statistical", "--outlier-mean-k", "8", "--outlier-multiplier", "2"],
+      "expect": { "statistical_outlier": { "mean_k": 8, "multiplier": 2.0 } }
+    },
+    {
+      "name": "statistical outlier strict",
+      "form": { "statistical": { "enabled": true, "meanK": "16", "multiplier": "1.5" } },
+      "argv": ["--outlier-statistical", "--outlier-mean-k", "16", "--outlier-multiplier", "1.5"],
+      "expect": { "statistical_outlier": { "mean_k": 16, "multiplier": 1.5 } }
+    },
+    {
+      "name": "radius outlier",
+      "form": { "radiusOutlier": { "enabled": true, "radius": "0.5", "minK": "5" } },
+      "argv": ["--outlier-radius", "--outlier-radius-value", "0.5", "--outlier-min-k", "5"],
+      "expect": { "radius_outlier": { "radius": 0.5, "min_k": 5 } }
+    },
+    {
+      "name": "keep classes",
+      "form": { "classes": { "enabled": true, "codes": "2, 6" } },
+      "argv": ["--keep-classes", "2", "6"],
+      "expect": { "classification": { "keep_codes": [2, 6] } }
+    },
+    {
+      "name": "keep returns",
+      "form": { "returns": { "enabled": true, "numbers": "1 2" } },
+      "argv": ["--keep-returns", "1", "2"],
+      "expect": { "return_number": { "keep_numbers": [1, 2] } }
+    },
+    {
+      "name": "spatial clip xy with negative values",
+      "form": { "clip": { "enabled": true, "xmin": "-10.5", "xmax": "20", "ymin": "-5", "ymax": "5" } },
+      "argv": ["--clip-xmin", "-10.5", "--clip-xmax", "20", "--clip-ymin", "-5", "--clip-ymax", "5"],
+      "expect": { "spatial_clip": { "x_min": -10.5, "x_max": 20.0, "y_min": -5.0, "y_max": 5.0, "z_min": null, "z_max": null } }
+    },
+    {
+      "name": "spatial clip z only",
+      "form": { "clip": { "enabled": true, "zmin": "0", "zmax": "460" } },
+      "argv": ["--clip-zmin", "0", "--clip-zmax", "460"],
+      "expect": { "spatial_clip": { "x_min": null, "z_min": 0.0, "z_max": 460.0 } }
+    },
+    {
+      "name": "height z",
+      "form": { "heightZ": { "enabled": true, "min": "440", "max": "480" } },
+      "argv": ["--z-min", "440", "--z-max", "480"],
+      "expect": { "height_z": { "z_min": 440.0, "z_max": 480.0 } }
+    },
+    {
+      "name": "poisson sample",
+      "form": { "sample": { "enabled": true, "radius": "0.5" } },
+      "argv": ["--sample-radius", "0.5"],
+      "expect": { "radius_sample": { "radius": 0.5 } }
+    },
+    {
+      "name": "ground csf only ground",
+      "form": { "ground": { "enabled": true, "method": "csf", "cell": "3", "threshold": "1.5", "groundOnly": true } },
+      "argv": ["--ground-classify", "csf", "--ground-cell", "3", "--ground-threshold", "1.5", "--ground-only"],
+      "expect": { "ground": { "method": "csf", "cell": 3.0, "window": null, "threshold": 1.5, "ground_only": true, "reset_classes": true } }
+    },
+    {
+      "name": "ground smrf keep classes",
+      "form": { "ground": { "enabled": true, "method": "smrf", "window": "30", "keepClasses": true } },
+      "argv": ["--ground-classify", "smrf", "--ground-window", "30", "--ground-keep-classes"],
+      "expect": { "ground": { "method": "smrf", "cell": null, "window": 30.0, "ground_only": false, "reset_classes": false } }
+    },
+    {
+      "name": "ground pmf defaults",
+      "form": { "ground": { "enabled": true, "method": "pmf" } },
+      "argv": ["--ground-classify", "pmf"],
+      "expect": { "ground": { "method": "pmf", "cell": null, "window": null, "threshold": null } }
+    },
+    {
+      "name": "several filters in pipeline order of the form",
+      "form": {
+        "returns": { "enabled": true, "numbers": "1" },
+        "heightZ": { "enabled": true, "max": "480" },
+        "statistical": { "enabled": true },
+        "sample": { "enabled": true, "radius": "2" }
+      },
+      "argv": [
+        "--outlier-statistical", "--outlier-mean-k", "8", "--outlier-multiplier", "2",
+        "--keep-returns", "1",
+        "--z-max", "480",
+        "--sample-radius", "2"
+      ],
+      "expect": {
+        "statistical_outlier": { "mean_k": 8, "multiplier": 2.0 },
+        "return_number": { "keep_numbers": [1] },
+        "height_z": { "z_min": null, "z_max": 480.0 },
+        "radius_sample": { "radius": 2.0 }
+      }
+    },
+    {
+      "name": "disabled sections are ignored even with values",
+      "form": {
+        "intensity": { "enabled": false, "min": "abc" },
+        "deduplicate": { "enabled": true }
+      },
+      "argv": ["--deduplicate"],
+      "expect": { "duplicate": { "enabled": true } }
+    }
+  ]
+}

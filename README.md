@@ -197,6 +197,27 @@ make harness                                   # ground_* シナリオを含む�
 uv run python tools/evaluate_ground_classify.py   # 上表の適合率・再現率
 ```
 
+## デスクトップアプリ（apps/desktop）
+
+`gqfilter` をボタンで使うための小さな画面です（Tauri 2）。入力ファイル（LAS / LAZ / E57）を選び、フィルターとオプション（CLI と同じもの）を選び、出力フォルダを選んで実行します。実行中は gqfilter の出力を表示し、終わると成功か失敗（gqfilter のエラー文）と、入力・出力の点数を表示します。
+
+- 処理はすべて `gqfilter` が行います。アプリはリリースの実行ファイル（`gqfilter_windows.zip` / `gqfilter.msi` / `gqfilter_macos.zip` / `gqfilter_linux.tar.gz`）を子プロセスとして呼ぶだけで、ネットワークには接続しません。
+- `gqfilter` は「gqfilter の場所」の設定 → 環境変数 `GQFILTER_PATH` → `PATH` → よくある場所（Windows は `%ProgramFiles%\gqfilter`）の順に探します。展開したフォルダを選んでも構いません。見つからないときは画面に表示し、実行ボタンは押せません。
+- 出力ファイル名は `<入力名>_filtered.las` / `.laz` です。同じ名前があるときは上書きしてよいか確認します。
+- 入力の点数はファイルの見出し（LAS / LAZ のヘッダー、E57 の XML）から、出力の点数は gqfilter が表示する `Points processed` から取ります。
+
+ビルドと起動（Node.js 20 以上と Rust が必要）:
+```bash
+cd apps/desktop
+npm ci
+npm run tauri dev                      # 開発用に起動
+npx tauri build --bundles app          # macOS の .app（Windows は --bundles msi など）
+npm test                               # 画面と引数の組み立てのテスト
+(cd src-tauri && cargo test)           # GQFILTER_PATH を設定すると、フィクスチャで実際に gqfilter を動かすテストも走る
+```
+
+CLI のオプションを変えたときは `apps/desktop/src/args/cases.json` も直してください。`tests/test_desktop_args.py` が、アプリの組み立てる引数を `cli.py` の引数パーサーで実際に読んで確かめます。
+
 ## 開発とテスト
 ```powershell
 pytest tests/test_filter.py
