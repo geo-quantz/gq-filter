@@ -8,23 +8,23 @@ import type { LogLine } from "./api";
 const PIPELINE_MARKER = "Pipeline execution failed:";
 const PLUGIN_NOISE_WORDS = ["dlopen", "unable to load", "failed to load", "library not loaded"] as const;
 
-// `Error:` at the end of a Python exception name (`RuntimeError:`) does not count.
-function hasErrorMarker(line: string): boolean {
+function looksLikePluginMessage(text: string): boolean {
+  const lower = text.toLowerCase();
+  return lower.includes("plugin") && PLUGIN_NOISE_WORDS.some((w) => lower.includes(w));
+}
+
+// `Error:` counts at the start of the line or after a plugin-load message it
+// was glued onto, so `RuntimeError:` or `Fatal Error:` from other code does not.
+function hasErrorMarker(raw: string): boolean {
+  const line = raw.trim();
   if (line.includes(PIPELINE_MARKER)) return true;
-  return [...line.matchAll(/Error:/g)].some((m) => {
-    const before = line.slice(0, m.index);
-    const word = /[A-Za-z0-9]*$/.exec(before)?.[0] ?? "";
-    return !/^[A-Z]/.test(word);
-  });
+  return [...line.matchAll(/Error:/g)].some(
+    (m) => m.index === 0 || looksLikePluginMessage(line.slice(0, m.index)),
+  );
 }
 
 export function isPluginNoise(line: string): boolean {
-  const lower = line.toLowerCase();
-  return (
-    lower.includes("plugin") &&
-    PLUGIN_NOISE_WORDS.some((w) => lower.includes(w)) &&
-    !hasErrorMarker(line)
-  );
+  return looksLikePluginMessage(line) && !hasErrorMarker(line);
 }
 
 export function logLineClass(l: LogLine): string | undefined {
