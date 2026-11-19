@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { LogLine, RunResult } from "../api";
+import { logLineClass } from "../logLine";
 import { describeCounts } from "../paths";
 
 export type RunPhase =
@@ -80,7 +81,7 @@ export function RunPanel({ phase, log, inputPoints }: Props) {
           <summary>gqfilter の出力（{log.length} 行）</summary>
           <pre ref={logRef} className="log">
             {log.map((l, i) => (
-              <span key={i} className={l.stream === "stderr" ? "stderr" : undefined}>
+              <span key={i} className={logLineClass(l)}>
                 {l.line}
                 {"\n"}
               </span>

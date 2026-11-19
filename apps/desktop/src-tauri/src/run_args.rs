@@ -148,23 +148,62 @@ pub fn parse_points_processed(line: &str) -> Option<u64> {
     line.trim().strip_prefix(POINTS_LINE)?.trim().parse().ok()
 }
 
+/// What cli.py puts in front of its own error lines.
+const PIPELINE_MARKER: &str = "Pipeline execution failed:";
+const ERROR_MARKER: &str = "Error:";
+
+/// Words that mark the harmless messages PDAL prints when an optional plugin
+/// (for example the HDF5 reader) cannot be loaded. Same list as
+/// `PLUGIN_NOISE_WORDS` in src/logLine.ts.
+const PLUGIN_NOISE_WORDS: &[&str] = &["dlopen", "unable to load", "failed to load", "library not loaded"];
+
+/// Where cli.py's markers start in `line`. `Error:` that ends a Python
+/// exception name (`RuntimeError:`) is not cli.py's own line, so it does not count.
+fn marker_positions(line: &str) -> impl Iterator<Item = usize> + '_ {
+    let pipeline = line.match_indices(PIPELINE_MARKER).map(|(i, _)| i);
+    let error = line
+        .match_indices(ERROR_MARKER)
+        .map(|(i, _)| i)
+        .filter(move |&i| !ends_exception_name(&line[..i]));
+    pipeline.chain(error)
+}
+
+/// True when the text ends with a word that starts with a capital letter.
+fn ends_exception_name(before: &str) -> bool {
+    before
+        .rsplit(|c: char| !c.is_ascii_alphanumeric())
+        .next()
+        .and_then(|word| word.chars().next())
+        .is_some_and(|c| c.is_ascii_uppercase())
+}
+
+/// The text from cli.py's error marker on, when the line has one. The marker
+/// can sit in the middle of a line: on macOS a PDAL plugin message is often
+/// printed without a newline and the real error is glued onto its end.
+pub fn error_text(line: &str) -> Option<&str> {
+    let line = line.trim();
+    marker_positions(line).min().map(|i| &line[i..])
+}
+
+/// A PDAL plugin-load message with no error of gqfilter's own in it.
+pub fn is_plugin_noise(line: &str) -> bool {
+    let lower = line.to_ascii_lowercase();
+    lower.contains("plugin")
+        && PLUGIN_NOISE_WORDS.iter().any(|w| lower.contains(w))
+        && error_text(line).is_none()
+}
+
 /// The message to show when gqfilter failed: its own error lines when it
-/// printed any (cli.py prints `Error: ...` or `Pipeline execution failed: ...`).
+/// printed any (cli.py prints `Error: ...` or `Pipeline execution failed: ...`),
+/// otherwise the last line that is not plugin noise.
 pub fn failure_message(stderr: &[String], exit_code: Option<i32>) -> String {
-    let marked: Vec<&str> = stderr
-        .iter()
-        .map(|l| l.trim())
-        .filter(|l| l.starts_with("Error:") || l.starts_with("Pipeline execution failed:"))
-        .collect();
+    let marked: Vec<&str> = stderr.iter().filter_map(|l| error_text(l)).collect();
     if !marked.is_empty() {
         return marked.join("\n");
     }
-    if let Some(last) = stderr
-        .iter()
-        .rev()
-        .map(|l| l.trim())
-        .find(|l| !l.is_empty())
-    {
+    let mut lines = stderr.iter().rev().map(|l| l.trim()).filter(|l| !l.is_empty());
+    let last = lines.clone().find(|l| !is_plugin_noise(l)).or_else(|| lines.next());
+    if let Some(last) = last {
         return last.to_string();
     }
     match exit_code {
@@ -311,5 +350,48 @@ mod tests {
         assert_eq!(failure_message(&s(&["", "boom", " "]), Some(1)), "boom");
         assert!(failure_message(&[], Some(3)).contains('3'));
         assert!(failure_message(&[], None).contains("止められ"));
+    }
+
+    const NOISE: &str = "PDAL: Unable to load plugin /opt/pdal/lib/libpdal_plugin_reader_hdf.dylib: \
+dlopen(/opt/pdal/lib/libpdal_plugin_reader_hdf.dylib, 0x0001): Library not loaded: @rpath/libhdf5.dylib";
+
+    #[test]
+    fn failure_message_finds_the_error_glued_onto_plugin_noise() {
+        let err = s(&[
+            NOISE,
+            &format!("{NOISE}Pipeline execution failed: readers.las: Unable to open file"),
+        ]);
+        assert_eq!(
+            failure_message(&err, Some(1)),
+            "Pipeline execution failed: readers.las: Unable to open file"
+        );
+        let err = s(&[&format!("{NOISE} Error: input file not found")]);
+        assert_eq!(failure_message(&err, Some(1)), "Error: input file not found");
+    }
+
+    #[test]
+    fn failure_message_skips_plugin_noise_in_the_fallback() {
+        let err = s(&["writers.las: disk full", NOISE, ""]);
+        assert_eq!(failure_message(&err, Some(1)), "writers.las: disk full");
+        // Only noise: still show something rather than nothing.
+        assert_eq!(failure_message(&s(&[NOISE]), Some(1)), NOISE);
+    }
+
+    #[test]
+    fn failure_message_ignores_python_exception_names() {
+        let err = s(&["RuntimeError: something deep", "Error: the real cause"]);
+        assert_eq!(failure_message(&err, Some(1)), "Error: the real cause");
+        let err = s(&["libHDF5Pipeline execution failed: x"]);
+        assert_eq!(failure_message(&err, Some(1)), "Pipeline execution failed: x");
+        let err = s(&["Pipeline execution failed: bad Error: inside"]);
+        assert_eq!(failure_message(&err, Some(1)), "Pipeline execution failed: bad Error: inside");
+    }
+
+    #[test]
+    fn plugin_noise_is_recognised() {
+        assert!(is_plugin_noise(NOISE));
+        assert!(!is_plugin_noise(&format!("{NOISE}Error: x")));
+        assert!(!is_plugin_noise("Error: plugin option is wrong"));
+        assert!(!is_plugin_noise("Points processed: 10"));
     }
 }
