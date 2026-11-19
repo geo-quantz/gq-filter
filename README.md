@@ -24,7 +24,7 @@
 `gq_filter` パッケージとして、版（タグ）を固定して取り込めます。PDAL 本体は別途（conda-forge など）で入れてください。
 
 ```bash
-uv add "gq-filter @ git+https://github.com/geo-quantz/gq-filter@v1.2.0"
+uv add "gq-filter @ git+https://github.com/geo-quantz/gq-filter@v1.3.0"
 ```
 
 ```python
