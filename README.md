@@ -224,7 +224,7 @@ CLI のオプションを変えたときは `apps/desktop/src/args/cases.json` �
 
 | ツール | 内容 |
 | :--- | :--- |
-| `gqfilter_run` | 1 ファイルをフィルタして書き出す（`gqfilter -i IN -o OUT ...` と同じ）。出力の点数と出力先を返す |
+| `gqfilter_run` | 1 ファイルをフィルタして書き出す（`gqfilter -i IN -o OUT ...` と同じ）。出力先と点の数を返す（下の表） |
 | `gqfilter_dry_run` | 同じ引数で、実行する PDAL パイプラインの JSON を返す（`--dry-run` と同じ。ファイルは書かない） |
 | `gqfilter_info` | 版、使えるファイルの種類、オプションと既定値の一覧 |
 
@@ -232,6 +232,15 @@ CLI のオプションを変えたときは `apps/desktop/src/args/cases.json` �
 - 入力は `.las` / `.laz` / `.e57`、出力は `.las` / `.laz`（`.copc.laz` は COPC）/ `.e57` / `.txt` / `.csv`。出力先のフォルダは先に作っておきます。
 - 出力ファイルがすでにあるときは上書きしません。上書きするときは `"overwrite": true` を付けます。入力と同じファイルには書けません。
 - 引数の誤りや PDAL のエラーは、ツールのエラー（理由の文つき）として返ります。サーバーは止まりません。
+
+`gqfilter_run` が返す点の数:
+
+| 項目 | 意味 |
+| :--- | :--- |
+| `points_processed` | 出力ファイルに書いた点の数（CLI の `Points processed` と同じ値） |
+| `points_input` | 入力ファイルの点の数（入力のヘッダーの値。読めないときは `null`） |
+| `points_removed` | 除いた点の数（`points_input - points_processed`。`points_input` が `null` なら `null`） |
+| `summary` | 上の数を文で書いたもの（例: `7262 points written to ... (input had 7388 points; 126 removed). ...`） |
 
 `gqfilter` の場所（インストールした実行ファイル）:
 
