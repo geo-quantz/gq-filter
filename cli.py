@@ -22,10 +22,16 @@ from gq_filter.filter import (
 )
 
 
-def parse_args(args: List[str]) -> argparse.Namespace:
-    """Parses command-line arguments for the PDAL filter pipeline."""
+MCP_COMMAND = "mcp"
+
+
+def build_parser() -> argparse.ArgumentParser:
+    """The CLI's argument parser (shared with the MCP server's tool schema)."""
     parser = argparse.ArgumentParser(
-        description="Execute a PDAL filter pipeline on a point cloud."
+        description=(
+            "Execute a PDAL filter pipeline on a point cloud. "
+            f"Run '{MCP_COMMAND}' as the only argument to start the MCP server on stdio."
+        )
     )
 
     # Core IO arguments
@@ -164,7 +170,12 @@ def parse_args(args: List[str]) -> argparse.Namespace:
         help="Standard deviation multiplier threshold (default: 2.0).",
     )
 
-    return parser.parse_args(args)
+    return parser
+
+
+def parse_args(args: List[str]) -> argparse.Namespace:
+    """Parses command-line arguments for the PDAL filter pipeline."""
+    return build_parser().parse_args(args)
 
 
 def assemble_config(args: argparse.Namespace) -> FilterOptions:
@@ -269,9 +280,26 @@ def _make_console_output_safe() -> None:
             stream.reconfigure(errors="replace")
 
 
+def _run_mcp(extra: List[str]) -> None:
+    """`gqfilter mcp`: serve the filter tools over MCP on stdin/stdout."""
+    if extra:
+        print(
+            f"usage: gqfilter {MCP_COMMAND}\n"
+            "Starts the MCP server on stdin/stdout (no other arguments).",
+            file=sys.stderr,
+        )
+        sys.exit(0 if extra in (["-h"], ["--help"]) else 2)
+    from gqfilter_mcp.server import serve  # lazy: the normal CLI does not load mcp
+
+    serve()
+
+
 def main():
     """Main entry point for the CLI tool."""
     _make_console_output_safe()
+    if sys.argv[1:2] == [MCP_COMMAND]:
+        _run_mcp(sys.argv[2:])
+        return
     try:
         args = parse_args(sys.argv[1:])
         filter_params = assemble_config(args)

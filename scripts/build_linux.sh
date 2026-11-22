@@ -30,7 +30,7 @@ echo "Ensuring pip is available in venv..."
 
 echo "Installing dependencies..."
 "$VENV_PY" -m pip install --upgrade pip
-"$VENV_PY" -m pip install pyinstaller pdal
+"$VENV_PY" -m pip install pyinstaller pdal "mcp>=2,<3"
 
 # 2. Run PyInstaller
 echo "Running PyInstaller..."

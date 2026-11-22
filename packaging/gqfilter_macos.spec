@@ -45,7 +45,8 @@ a = Analysis(
     pathex=[],
     binaries=binaries,
     datas=datas,
-    hiddenimports=['pdal'],
+    # `gqfilter mcp` imports its server lazily; name it so the MCP SDK is always bundled.
+    hiddenimports=['pdal', 'gqfilter_mcp.server', 'mcp.server', 'mcp.server.stdio', 'mcp_types'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
