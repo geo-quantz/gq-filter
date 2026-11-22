@@ -1,6 +1,6 @@
 [package]
 name = "gq-filter-desktop"
-version = "1.3.0"
+version = "1.4.0"
 description = "Desktop app for the gq-filter point cloud filtering CLI"
 edition = "2021"
 rust-version = "1.85"
