@@ -161,9 +161,10 @@ class ReturnNumberParams:
 
 @dataclass
 class SpatialClipParams:
-    """Parameters for bounding-box spatial clipping using filters.crop.
+    """Parameters for bounding-box spatial clipping using filters.range.
 
     Clips the point cloud to the specified XY (and optionally Z) extent.
+    Any bound may be left unset (None) to leave that side open.
     All bounds are in the same coordinate system as the point cloud.
     """
     x_min: Optional[float] = None
@@ -537,39 +538,38 @@ def build_return_number_filter(
 def build_spatial_clip_filter(
         params: Optional[SpatialClipParams],
 ) -> Optional[Dict[str, Any]]:
-    """Build a bounding-box clip stage using filters.crop.
+    """Build a bounding-box clip stage using filters.range.
 
-    Generates a PDAL bounds string in the format:
-      ([xmin,xmax],[ymin,ymax])            — XY only
-      ([xmin,xmax],[ymin,ymax],[zmin,zmax]) — with Z
-    Any un-set boundary defaults to ±inf via PDAL's open-ended syntax.
+    Only the bounds that are set are written, with PDAL's open-ended range syntax:
+      X[xmin:xmax],Y[ymin:ymax],Z[zmin:zmax]   — every bound set
+      X[:0.0]                                  — only x_max set
+      X[100.0:],Y[:200.0]                      — x_min and y_max set
+    Bounds are inclusive. An axis with no bound is left out. (filters.crop cannot do
+    this: PDAL rejects ±inf in its bounds, so a one-sided clip failed.)
     """
     if not params or not params.enabled:
         return None
 
-    has_xy = any(v is not None for v in [params.x_min, params.x_max, params.y_min, params.y_max])
-    has_z = any(v is not None for v in [params.z_min, params.z_max])
+    axes = (
+        ("X", params.x_min, params.x_max),
+        ("Y", params.y_min, params.y_max),
+        ("Z", params.z_min, params.z_max),
+    )
 
-    if not has_xy and not has_z:
+    def _bound(value: Optional[float]) -> str:
+        return "" if value is None else str(float(value))
+
+    limits = [
+        f"{dim}[{_bound(lo)}:{_bound(hi)}]"
+        for dim, lo, hi in axes
+        if lo is not None or hi is not None
+    ]
+    if not limits:
         return None
 
-    def _range(lo: Optional[float], hi: Optional[float]) -> str:
-        lo_str = str(lo) if lo is not None else "-inf"
-        hi_str = str(hi) if hi is not None else "inf"
-        return f"[{lo_str},{hi_str}]"
-
-    x_range = _range(params.x_min, params.x_max)
-    y_range = _range(params.y_min, params.y_max)
-
-    if has_z:
-        z_range = _range(params.z_min, params.z_max)
-        bounds = f"({x_range},{y_range},{z_range})"
-    else:
-        bounds = f"({x_range},{y_range})"
-
     return {
-        "type": "filters.crop",
-        "bounds": bounds,
+        "type": "filters.range",
+        "limits": ",".join(limits),
     }
 
 
