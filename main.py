@@ -166,13 +166,13 @@ def parse_args(args: List[str]) -> argparse.Namespace:
     incidence_group.add_argument(
         "--incidence-angle-min",
         type=float,
-        help="Minimum scan angle (abs ScanAngleRank).",
+        help="Minimum incidence angle in degrees (surface normal vs. line from the scanner position; see gqfilter --help).",
     )
     incidence_group.add_argument(
         "--incidence-angle-max",
         "--iam",
         type=float,
-        help="Maximum scan angle (abs ScanAngleRank).",
+        help="Maximum incidence angle in degrees (surface normal vs. line from the scanner position; see gqfilter --help).",
     )
 
     # Intensity Filter Group
@@ -196,20 +196,20 @@ def parse_args(args: List[str]) -> argparse.Namespace:
         "--range-min",
         "--rmin",
         type=float,
-        help="Minimum Euclidean distance from origin.",
+        help="Minimum distance from the scanner position (E57 header scan pose, --origin, or 0,0,0).",
     )
     range_group.add_argument(
         "--range-max",
         "--rmax",
         type=float,
-        help="Maximum Euclidean distance from origin.",
+        help="Maximum distance from the scanner position (E57 header scan pose, --origin, or 0,0,0).",
     )
     range_group.add_argument(
         "--origin",
         type=float,
         nargs=3,
         metavar=('X', 'Y', 'Z'),
-        help="Manual scanner origin for distance filter (default: auto-detect or 0,0,0).",
+        help="Manual scanner position for the distance and incidence filters (default: E57 header or 0,0,0).",
     )
 
     # Voxel Filter Group

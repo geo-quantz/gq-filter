@@ -14,31 +14,42 @@ datas = collect_data_files('pdal')
 binaries = collect_dynamic_libs('pdal')
 
 # Handle PDAL shared libraries and plugins on macOS
-# PDAL on macOS (especially via Homebrew or Conda) uses .dylib files.
-# We need to ensure the base PDAL libraries and any plugins are bundled.
+# PDAL on macOS (Conda or Homebrew) uses .dylib files. Bundle the base PDAL
+# library and its plugins from ONE install only. Mixing them (e.g. conda's
+# libpdalcpp with Homebrew's libpdal_plugin_*_arrow, which links Homebrew's
+# libarrow) makes PDAL print plugin load errors when it scans its plugins, or
+# breaks the bundle outright when the two PDAL versions differ.
 
-# 1. Check Conda environment
+
+def _pdal_dylibs(lib_dir):
+    if not os.path.isdir(lib_dir):
+        return []
+    return [
+        (os.path.join(lib_dir, f), '.')
+        for f in sorted(os.listdir(lib_dir))
+        if 'libpdal' in f and f.endswith('.dylib')
+    ]
+
+
+def _homebrew_lib():
+    try:
+        prefix = subprocess.check_output(['brew', '--prefix'], encoding='utf-8').strip()
+    except Exception:
+        return None
+    return os.path.join(prefix, 'lib')
+
+
+# 1. Conda environment (the supported build: scripts/build_macos.sh, CI)
 conda_prefix = os.environ.get('CONDA_PREFIX')
-if conda_prefix:
-    pdal_lib = os.path.join(conda_prefix, 'lib')
-    if os.path.exists(pdal_lib):
-        for f in os.listdir(pdal_lib):
-            if 'libpdal' in f and f.endswith('.dylib'):
-                binaries.append((os.path.join(pdal_lib, f), '.'))
+pdal_dylibs = _pdal_dylibs(os.path.join(conda_prefix, 'lib')) if conda_prefix else []
 
-# 2. Check Homebrew (as fallback or addition)
-try:
-    brew_prefix = subprocess.check_output(['brew', '--prefix'], encoding='utf-8').strip()
-    pdal_homebrew_lib = os.path.join(brew_prefix, 'lib')
-    if os.path.exists(pdal_homebrew_lib):
-        for f in os.listdir(pdal_homebrew_lib):
-            if 'libpdal' in f and f.endswith('.dylib'):
-                # Avoid duplicates if already added by collect_dynamic_libs
-                target_path = os.path.join(pdal_homebrew_lib, f)
-                if not any(target_path == b[0] for b in binaries):
-                    binaries.append((target_path, '.'))
-except Exception:
-    pass
+# 2. Homebrew, only when no conda PDAL was found
+if not pdal_dylibs:
+    brew_lib = _homebrew_lib()
+    if brew_lib:
+        pdal_dylibs = _pdal_dylibs(brew_lib)
+
+binaries += [b for b in pdal_dylibs if b[0] not in {src for src, _ in binaries}]
 
 a = Analysis(
     [entry_point],

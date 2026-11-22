@@ -12,7 +12,13 @@ from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 
 from gqfilter_mcp import tools
-from tests.test_mcp_tools import FIXTURE, REPO, STATISTICAL_OUTLIER_POINTS, needs_pdal
+from tests.test_mcp_tools import (
+    FIXTURE,
+    FIXTURE_POINTS,
+    REPO,
+    STATISTICAL_OUTLIER_POINTS,
+    needs_pdal,
+)
 
 TIMEOUT_SECONDS = 120
 EXPECTED_TOOLS = {"gqfilter_run", "gqfilter_dry_run", "gqfilter_info"}
@@ -57,6 +63,9 @@ def test_initialize_list_tools_and_dry_run(tmp_path):
     assert init.server_info.version == tools.VERSION
     assert {t.name for t in listed.tools} == EXPECTED_TOOLS
     by_name = {t.name: t for t in listed.tools}
+    run_description = by_name["gqfilter_run"].description
+    assert "points_processed" in run_description and "written" in run_description
+    assert "points_input" in run_description and "points_removed" in run_description
     assert by_name["gqfilter_run"].input_schema["properties"] == tools.INPUT_SCHEMA["properties"]
 
     assert not dry.is_error
@@ -82,6 +91,8 @@ def test_run_over_stdio(tmp_path):
 
     assert not first.is_error, first.content[0].text
     assert _payload(first)["points_processed"] == STATISTICAL_OUTLIER_POINTS
+    assert _payload(first)["points_input"] == FIXTURE_POINTS
+    assert _payload(first)["points_removed"] == FIXTURE_POINTS - STATISTICAL_OUTLIER_POINTS
     assert first.structured_content["output"] == str(output)
     assert output.is_file()
     assert again.is_error and "already exists" in _payload(again)["error"]

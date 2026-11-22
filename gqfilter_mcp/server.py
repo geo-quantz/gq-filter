@@ -31,8 +31,11 @@ TOOLS: Final[dict[str, dict[str, Any]]] = {
         "schema": tools.INPUT_SCHEMA,
         "description": (
             "Filter one point cloud file and write the result (same as `gqfilter -i IN -o OUT "
-            "[options]`). Returns the number of points written and the output path. Refuses "
-            "to replace an existing output unless overwrite is true."
+            "[options]`). Returns the output path and point counts: points_processed = the "
+            "number of points written to the output file (the CLI's \"Points processed\"), "
+            "points_input = points in the input file (from its header), points_removed = "
+            "points_input - points_processed. Refuses to replace an existing output unless "
+            "overwrite is true."
         ),
     },
     "gqfilter_dry_run": {

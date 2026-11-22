@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import io
+import json
 import math
 import os
 import sys
@@ -237,6 +238,46 @@ def _prepare(arguments: Mapping[str, Any], overwrite: bool) -> dict[str, Any]:
     return {"args": args, "pipeline": pipeline}
 
 
+# --- point counts -------------------------------------------------------------
+
+def input_point_count(metadata: Any) -> int | None:
+    """The input's point count from the executed pipeline's reader metadata (its header)."""
+    stages = metadata.get("metadata") if isinstance(metadata, Mapping) else None
+    if not isinstance(stages, Mapping):
+        return None
+    for name, stage in stages.items():
+        if not name.startswith("readers."):
+            continue
+        entries = stage if isinstance(stage, list) else [stage]
+        for entry in entries:
+            count = entry.get("count") if isinstance(entry, Mapping) else None
+            if isinstance(count, int) and count >= 0:
+                return count
+    return None
+
+
+def _quickinfo_point_count(path: str) -> int | None:
+    """Fallback: the reader's quick header read (no points loaded)."""
+    import pdal  # lazy, as in execute_pipeline
+
+    try:
+        info = pdal.Pipeline(json.dumps({"pipeline": [path]})).quickinfo
+    except Exception:  # noqa: BLE001 - a missing count must not fail a run that succeeded
+        return None
+    for stage in info.values():
+        count = stage.get("num_points") if isinstance(stage, Mapping) else None
+        if isinstance(count, int) and count >= 0:
+            return count
+    return None
+
+
+def _summary(written: int, total: int | None, output: str) -> str:
+    text = f"{written} points written to {output}"
+    if total is not None:
+        text += f" (input had {total} points; {total - written} removed)"
+    return text + ". points_processed = the number of points written to the output file."
+
+
 # --- tools --------------------------------------------------------------------
 
 def dry_run(arguments: Mapping[str, Any]) -> dict[str, Any]:
@@ -246,7 +287,12 @@ def dry_run(arguments: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def run(arguments: Mapping[str, Any]) -> dict[str, Any]:
-    """gqfilter_run: filter one file, as `gqfilter -i ... -o ...` does."""
+    """gqfilter_run: filter one file, as `gqfilter -i ... -o ...` does.
+
+    `points_processed` is the number of points written to the output file (the CLI's
+    "Points processed" line). `points_input` is the input header's count and
+    `points_removed` the difference; both are null if the reader reports no count.
+    """
     prepared = _prepare(arguments, overwrite=bool(arguments.get("overwrite", False)))
     args = prepared["args"]
     with contextlib.redirect_stdout(sys.stderr):
@@ -256,11 +302,20 @@ def run(arguments: Mapping[str, Any]) -> dict[str, Any]:
                 if os.path.exists(args.output) else "")
         raise ToolError(
             f"PDAL pipeline failed: {str(result['error'])[:MAX_REASON_CHARS * 3]}{hint}")
+    written = int(result["points_processed"])
+    total = input_point_count(result.get("metadata"))
+    if total is None:
+        total = _quickinfo_point_count(args.input)
+    if total is not None and total < written:  # e.g. a per-scan count of a multi-scan E57
+        total = None
     payload = {
         "ok": True,
         "input": args.input,
         "output": args.output,
-        "points_processed": int(result["points_processed"]),
+        "points_processed": written,
+        "points_input": total,
+        "points_removed": None if total is None else total - written,
+        "summary": _summary(written, total, args.output),
     }
     if "note" in result:
         payload["note"] = result["note"]

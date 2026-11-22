@@ -52,7 +52,14 @@ def build_parser() -> argparse.ArgumentParser:
     incidence_group.add_argument(
         "--incidence-angle-max",
         type=float,
-        help="Maximum incidence angle (uses absolute ScanAngleRank).",
+        metavar="DEG",
+        help=(
+            "Maximum incidence angle in degrees: the angle between the surface normal "
+            "(estimated from the 8 nearest points) and the line from the scanner position "
+            "to the point. Points hit at a larger (more grazing) angle are removed. The "
+            "scanner position is the scan pose in a structured E57 header, otherwise the "
+            "coordinate origin (0,0,0). Not based on ScanAngleRank."
+        ),
     )
 
     # Intensity Filter Group
@@ -67,10 +74,20 @@ def build_parser() -> argparse.ArgumentParser:
     # Measurement Distance (Range) Filter Group
     range_group = parser.add_argument_group("Measurement Distance Filter")
     range_group.add_argument(
-        "--range-min", type=float, help="Minimum Euclidean distance from origin."
+        "--range-min",
+        type=float,
+        help=(
+            "Minimum distance from the scanner position (the scan pose in a structured E57 "
+            "header, otherwise the coordinate origin (0,0,0))."
+        ),
     )
     range_group.add_argument(
-        "--range-max", type=float, help="Maximum Euclidean distance from origin."
+        "--range-max",
+        type=float,
+        help=(
+            "Maximum distance from the scanner position (the scan pose in a structured E57 "
+            "header, otherwise the coordinate origin (0,0,0))."
+        ),
     )
 
     # Duplicate Filter Group

@@ -8,6 +8,10 @@
 - [x] 実行ファイル（PyInstaller）に MCP SDK（`mcp` 2 系）を入れる。macOS の実行ファイルは約 25 MB 大きくなる（うち約 7 MB は PDAL のライブラリの重複で、MCP とは関係ない）
 - [x] `gq_filter.__version__` を追加
 - [x] Windows のインストーラ（MSI）の版を 1.4.0.0 にする
+- [x] 空間クリップで片側だけの指定（例: `--clip-xmax 0` だけ）が PDAL のエラー（`No valid minimum value for range`）で止まっていたのを直す。`filters.crop` をやめ、指定した境界だけを書く `filters.range`（例: `X[:0.0]`）にする。両端を指定したときの結果は変わらない
+- [x] MCP の `gqfilter_run` が `points_input`（入力の点数）・`points_removed`（除いた点数）・`summary` も返す。`points_processed` は出力ファイルに書いた点数（CLI の `Points processed` と同じ）だとツールの説明と結果に書く
+- [x] 入射角フィルターの説明（`--help`・README）を実際の計算に合わせる。`ScanAngleRank` ではなく、面の法線と器械点（E57 のヘッダー、無ければ原点 (0,0,0)）から点への向きのなす角。距離フィルターも同じ器械点から測ると書く。処理は変えない
+- [x] macOS の実行ファイルを conda の環境で作るとき、Homebrew の PDAL のライブラリを混ぜない。混ざると Homebrew の arrow プラグインの読み込みエラーが stderr に出たり、版が違うと起動できなかったりした（上の「PDAL のライブラリの重複」もこれ）
 - [ ] Windows（MSI）・Linux の実行ファイルで `gqfilter mcp` を確かめる
 
 ---

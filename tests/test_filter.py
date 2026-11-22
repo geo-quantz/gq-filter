@@ -264,30 +264,26 @@ def test_spatial_clip_disabled():
 def test_spatial_clip_xy_only():
     params = SpatialClipParams(x_min=100.0, x_max=200.0, y_min=50.0, y_max=150.0)
     stage = build_spatial_clip_filter(params)
-    assert stage is not None
-    assert stage["type"] == "filters.crop"
-    bounds = stage["bounds"]
-    assert "[100.0,200.0]" in bounds
-    assert "[50.0,150.0]" in bounds
-    assert "inf" not in bounds.replace("-inf", "")
+    assert stage == {"type": "filters.range", "limits": "X[100.0:200.0],Y[50.0:150.0]"}
 
 
 def test_spatial_clip_with_z():
     params = SpatialClipParams(x_min=0.0, x_max=10.0, y_min=0.0, y_max=10.0, z_min=1.0, z_max=5.0)
     stage = build_spatial_clip_filter(params)
-    assert stage is not None
-    bounds = stage["bounds"]
-    assert "[1.0,5.0]" in bounds
+    assert stage == {"type": "filters.range", "limits": "X[0.0:10.0],Y[0.0:10.0],Z[1.0:5.0]"}
 
 
 def test_spatial_clip_partial_bounds():
+    """Unset sides stay open (no ±inf, which PDAL rejects); unset axes are left out."""
     params = SpatialClipParams(x_min=100.0, y_max=200.0)
     stage = build_spatial_clip_filter(params)
-    assert stage is not None
-    bounds = stage["bounds"]
-    assert "100.0" in bounds
-    assert "200.0" in bounds
-    assert "-inf" in bounds or "inf" in bounds
+    assert stage == {"type": "filters.range", "limits": "X[100.0:],Y[:200.0]"}
+    assert "inf" not in stage["limits"]
+
+
+def test_spatial_clip_z_only():
+    stage = build_spatial_clip_filter(SpatialClipParams(z_max=0.0))
+    assert stage == {"type": "filters.range", "limits": "Z[:0.0]"}
 
 
 def test_pipeline_includes_spatial_clip():
@@ -297,7 +293,7 @@ def test_pipeline_includes_spatial_clip():
     pipeline = build_pipeline("input.las", "output.las", options)
     stages = pipeline["pipeline"]
     types = [s.get("type") for s in stages if isinstance(s, dict)]
-    assert "filters.crop" in types
+    assert "filters.range" in types
 
 
 def test_height_z_filter_disabled():

@@ -21,6 +21,7 @@ FIXTURE = REPO / "tests" / "fixtures" / "autzen-small.laz"
 CASES_FILE = REPO / "apps" / "desktop" / "src" / "args" / "cases.json"
 DESKTOP_CASES = json.loads(CASES_FILE.read_text(encoding="utf-8"))["cases"]
 STATISTICAL_OUTLIER_POINTS = 7262  # README 評価レポート: k=8, 2σ
+FIXTURE_POINTS = 7388  # autzen-small.laz header point count
 
 
 def _pdal_available() -> bool:
@@ -144,8 +145,50 @@ def test_run_statistical_outlier_on_fixture(tmp_path):
     io = _io(tmp_path)
     payload = tools.run({**io, "outlier_statistical": True})
     assert payload["points_processed"] == STATISTICAL_OUTLIER_POINTS
+    assert payload["points_input"] == FIXTURE_POINTS
+    assert payload["points_removed"] == FIXTURE_POINTS - STATISTICAL_OUTLIER_POINTS
     assert payload["output"] == io["output"]
     assert Path(io["output"]).is_file()
+
+
+@needs_pdal
+def test_run_points_processed_is_the_number_written(tmp_path):
+    """points_processed = points in the output file; the summary says so in words."""
+    import pdal
+
+    io = _io(tmp_path)
+    payload = tools.run({**io, "outlier_statistical": True})
+    written = pdal.Pipeline(json.dumps({"pipeline": [io["output"]]}))
+    assert written.execute() == payload["points_processed"]
+    summary = payload["summary"]
+    assert "7262 points written" in summary
+    assert "7388" in summary and "126 removed" in summary
+    assert "points_processed" in summary
+
+
+@needs_pdal
+def test_run_with_nothing_removed(tmp_path):
+    payload = tools.run({**_io(tmp_path), "clip_xmin": 0.0})
+    assert payload["points_processed"] == payload["points_input"] == FIXTURE_POINTS
+    assert payload["points_removed"] == 0
+
+
+@needs_pdal
+def test_run_does_not_report_a_negative_removed_count(tmp_path, monkeypatch):
+    monkeypatch.setattr(tools, "input_point_count", lambda _md: 10)
+    monkeypatch.setattr(tools, "_quickinfo_point_count", lambda _path: None)
+    payload = tools.run(_io(tmp_path))
+    assert payload["points_processed"] == FIXTURE_POINTS
+    assert payload["points_input"] is None and payload["points_removed"] is None
+
+
+def test_input_point_count_from_reader_metadata():
+    metadata = {"metadata": {"readers.las": {"count": 7388}, "writers.las": {}}}
+    assert tools.input_point_count(metadata) == 7388
+    assert tools.input_point_count({"metadata": {"readers.las": [{"count": 5}]}}) == 5
+    assert tools.input_point_count({"metadata": {"readers.e57": {}}}) is None
+    assert tools.input_point_count({}) is None
+    assert tools.input_point_count(None) is None
 
 
 @needs_pdal
