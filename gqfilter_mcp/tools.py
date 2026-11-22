@@ -306,6 +306,8 @@ def run(arguments: Mapping[str, Any]) -> dict[str, Any]:
     total = input_point_count(result.get("metadata"))
     if total is None:
         total = _quickinfo_point_count(args.input)
+    if total is not None and total < written:  # e.g. a per-scan count of a multi-scan E57
+        total = None
     payload = {
         "ok": True,
         "input": args.input,

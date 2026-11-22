@@ -173,6 +173,15 @@ def test_run_with_nothing_removed(tmp_path):
     assert payload["points_removed"] == 0
 
 
+@needs_pdal
+def test_run_does_not_report_a_negative_removed_count(tmp_path, monkeypatch):
+    monkeypatch.setattr(tools, "input_point_count", lambda _md: 10)
+    monkeypatch.setattr(tools, "_quickinfo_point_count", lambda _path: None)
+    payload = tools.run(_io(tmp_path))
+    assert payload["points_processed"] == FIXTURE_POINTS
+    assert payload["points_input"] is None and payload["points_removed"] is None
+
+
 def test_input_point_count_from_reader_metadata():
     metadata = {"metadata": {"readers.las": {"count": 7388}, "writers.las": {}}}
     assert tools.input_point_count(metadata) == 7388
