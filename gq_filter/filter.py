@@ -50,7 +50,11 @@ class FilterType:
 @dataclass
 class IncidenceAngleParams:
     """Parameters for incidence angle filter.
-    Many datasets approximate incidence using the LAS 'ScanAngleRank' dimension.
+
+    The incidence angle is the angle between the surface normal (filters.normal, knn=8)
+    and the line from the scanner position to the point (0 = hit head-on, 90 = grazing).
+    The scanner position is RangeParams.manual_origin, else the scan pose in a structured
+    E57 header, else the coordinate origin (0,0,0). LAS 'ScanAngleRank' is not used.
     """
     min_angle: float = 0.0
     max_angle: float = 90.0
@@ -68,8 +72,10 @@ class IntensityParams:
 @dataclass
 class RangeParams:
     """Parameters for measurement distance (range) filter.
-    For structured E57 files, we can automatically extract the scanner origin.
-    For other formats (LAS), manual_origin should be provided or it defaults to (0,0,0).
+
+    Distance is measured from the scanner position: manual_origin if given, else the scan
+    pose in a structured E57 header, else the coordinate origin (0,0,0) (e.g. for LAS).
+    The incidence angle filter uses the same scanner position.
     """
     min_distance: Optional[float] = None
     max_distance: Optional[float] = None
