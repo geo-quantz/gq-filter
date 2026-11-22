@@ -24,7 +24,7 @@
 `gq_filter` パッケージとして、版（タグ）を固定して取り込めます。PDAL 本体は別途（conda-forge など）で入れてください。
 
 ```bash
-uv add "gq-filter @ git+https://github.com/geo-quantz/gq-filter@v1.3.0"
+uv add "gq-filter @ git+https://github.com/geo-quantz/gq-filter@v1.4.0"
 ```
 
 ```python
@@ -218,10 +218,55 @@ npm test                               # 画面と引数の組み立てのテス
 
 CLI のオプションを変えたときは `apps/desktop/src/args/cases.json` も直してください。`tests/test_desktop_args.py` が、アプリの組み立てる引数を `cli.py` の引数パーサーで実際に読んで確かめます。
 
+## MCP で使う（gqfilter mcp）
+
+`gqfilter mcp` で、Claude などの AI から gqfilter を呼べる MCP サーバーが標準入出力で起動します。1 回の呼び出しで 1 ファイルを処理します（フォルダの一括処理のツールはありません。複数のファイルは 1 ファイルずつ呼んでください）。処理は CLI と同じ引数の解釈・同じパイプラインの組み立てで行い、ネットワークには接続しません。
+
+| ツール | 内容 |
+| :--- | :--- |
+| `gqfilter_run` | 1 ファイルをフィルタして書き出す（`gqfilter -i IN -o OUT ...` と同じ）。出力の点数と出力先を返す |
+| `gqfilter_dry_run` | 同じ引数で、実行する PDAL パイプラインの JSON を返す（`--dry-run` と同じ。ファイルは書かない） |
+| `gqfilter_info` | 版、使えるファイルの種類、オプションと既定値の一覧 |
+
+- 引数は `input` / `output`（どちらも絶対パス）と、CLI のオプションを `_` 区切りにした名前です（例: `--outlier-mean-k` → `outlier_mean_k`、`--keep-classes 2 6` → `"keep_classes": [2, 6]`）。既定値は CLI と同じです。
+- 入力は `.las` / `.laz` / `.e57`、出力は `.las` / `.laz`（`.copc.laz` は COPC）/ `.e57` / `.txt` / `.csv`。出力先のフォルダは先に作っておきます。
+- 出力ファイルがすでにあるときは上書きしません。上書きするときは `"overwrite": true` を付けます。入力と同じファイルには書けません。
+- 引数の誤りや PDAL のエラーは、ツールのエラー（理由の文つき）として返ります。サーバーは止まりません。
+
+`gqfilter` の場所（インストールした実行ファイル）:
+
+| OS | 場所 |
+| :--- | :--- |
+| Windows（MSI） | `C:\Program Files\gqfilter\gqfilter.exe`（MSI が `PATH` にも入れます） |
+| Windows（zip） / macOS / Linux | 展開したフォルダの中の `gqfilter.exe` / `gqfilter`（例: macOS で `~/gqfilter/gqfilter`） |
+
+**Claude Code**:
+```bash
+claude mcp add gqfilter -- gqfilter mcp                     # gqfilter が PATH にあるとき
+claude mcp add gqfilter -- /Users/you/gqfilter/gqfilter mcp  # PATH に無いときは絶対パスで
+```
+
+**Claude Desktop**: `claude_desktop_config.json`（macOS は `~/Library/Application Support/Claude/`、Windows は `%APPDATA%\Claude\`）に足して、Claude Desktop を再起動します。Claude Desktop は `PATH` を引き継がないことがあるので、`command` は絶対パスで書きます。
+```json
+{
+  "mcpServers": {
+    "gqfilter": {
+      "command": "C:\\Program Files\\gqfilter\\gqfilter.exe",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+macOS では `"command": "/Users/you/gqfilter/gqfilter"` のように書きます。
+
+確かめたこと（1.4.0、macOS / Apple Silicon）: PyInstaller で作った `gqfilter` で、MCP SDK のクライアントから initialize → ツール一覧 → `gqfilter_dry_run` / `gqfilter_run`（autzen-small で統計的外れ値除去、7,262 点）が動くこと、プロトコル版 `2025-06-18` の initialize に応えること、`claude mcp add` で登録できること。**まだ確かめていないこと**: Claude Desktop / Claude Code から実際に呼ぶこと、Windows（MSI の場所と PATH を含む）と Linux の実行ファイル。
+
 ## 開発とテスト
 ```powershell
 pytest tests/test_filter.py
 ```
+
+MCP のテスト（`tests/test_mcp_tools.py`、`tests/test_mcp_stdio.py`）には `mcp`（2 系）が要ります（`uv sync` で入ります。conda なら `conda install -c conda-forge 'mcp>=2,<3'`）。作った実行ファイルで stdio のテストを回すときは `GQFILTER_MCP_COMMAND=dist/gqfilter/gqfilter pytest tests/test_mcp_stdio.py` とします。
 
 ---
 License: [MIT](LICENSE)

@@ -20,12 +20,18 @@ eval "$(conda shell.bash hook)"
 ENV_NAME="${GQFILTER_ENV:-gqfilter_build_macos}"
 
 if ! conda env list | awk '{print $1}' | grep -qx "$ENV_NAME"; then
-    echo "Creating conda env '$ENV_NAME' with pdal + python-pdal + pyinstaller..."
+    echo "Creating conda env '$ENV_NAME' with pdal + python-pdal + pyinstaller + mcp..."
     conda create -y -n "$ENV_NAME" -c conda-forge \
-        python=3.12 pdal python-pdal pyinstaller
+        python=3.12 pdal python-pdal pyinstaller 'mcp>=2,<3'
 fi
 
 conda activate "$ENV_NAME"
+
+# An env made before v1.4.0 has no mcp (needed by `gqfilter mcp`)
+if ! python -c "import mcp.server, mcp_types" >/dev/null 2>&1; then
+    echo "Installing mcp into '$ENV_NAME'..."
+    conda install -y -c conda-forge 'mcp>=2,<3'
+fi
 
 # 2. Run PyInstaller
 echo "Running PyInstaller..."

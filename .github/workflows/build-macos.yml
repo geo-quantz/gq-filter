@@ -30,7 +30,7 @@ jobs:
 
       - name: Install PDAL and PyInstaller
         run: |
-          conda install -y -c conda-forge python=3.12 pdal python-pdal pyinstaller
+          conda install -y -c conda-forge python=3.12 pdal python-pdal pyinstaller 'mcp>=2,<3'
 
       - name: Build with PyInstaller
         run: |

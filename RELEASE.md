@@ -2,6 +2,16 @@
 
 ---
 
+## Version 1.4.0 (予定)
+
+- [x] MCP サーバー（`gqfilter mcp`）: AI から 1 ファイルずつフィルタを呼べる。ツールは `gqfilter_run`（実行）、`gqfilter_dry_run`（パイプラインの確認）、`gqfilter_info`（オプションの一覧）。引数は CLI のオプションと同じ名前・同じ既定値で、CLI と同じ処理を通る。フォルダの一括処理のツールは無い
+- [x] 実行ファイル（PyInstaller）に MCP SDK（`mcp` 2 系）を入れる。macOS の実行ファイルは約 25 MB 大きくなる（うち約 7 MB は PDAL のライブラリの重複で、MCP とは関係ない）
+- [x] `gq_filter.__version__` を追加
+- [x] Windows のインストーラ（MSI）の版を 1.4.0.0 にする
+- [ ] Windows（MSI）・Linux の実行ファイルで `gqfilter mcp` を確かめる
+
+---
+
 ## Version 1.3.0 (2026/11/19)
 
 - [x] デスクトップアプリ（`apps/desktop/`、Tauri）: 点群ファイルを選ぶ → フィルタを選ぶ → 出力先を選ぶ → 実行 → 入力と出力の点の数を見る。処理はインストールした gqfilter を呼ぶ

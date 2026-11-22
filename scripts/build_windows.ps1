@@ -26,7 +26,7 @@ Write-Host "Installing dependencies..."
 python -m pip install --upgrade pip
 # Install pyinstaller and pdal. 
 # We assume the current project's dependencies are also needed.
-python -m pip install pyinstaller pdal
+python -m pip install pyinstaller pdal "mcp>=2,<3"
 if (Test-Path "pyproject.toml") {
     # If using a project with dependencies, install them
     python -m pip install .
